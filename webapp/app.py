@@ -597,10 +597,19 @@ def admin_update_user(user_id):
     is_admin = int(data.get("is_admin", user["is_admin"]))
     stage = data.get("stage", user["stage"])
 
-    db.execute(
-        "UPDATE users SET display_name = ?, login_code = ?, is_admin = ?, stage = ? WHERE id = ?",
-        (display_name, login_code, is_admin, stage, user_id)
-    )
+    # When resetting to an onboarding stage, also reset indexes
+    if stage != user["stage"] and stage in ("rules", "tutorial", "calibration"):
+        db.execute(
+            """UPDATE users SET display_name = ?, login_code = ?, is_admin = ?, stage = ?,
+               tutorial_index = 0, calibration_index = 0, current_sample_id = NULL,
+               onboarding_completed_at = NULL WHERE id = ?""",
+            (display_name, login_code, is_admin, stage, user_id)
+        )
+    else:
+        db.execute(
+            "UPDATE users SET display_name = ?, login_code = ?, is_admin = ?, stage = ? WHERE id = ?",
+            (display_name, login_code, is_admin, stage, user_id)
+        )
     db.commit()
     user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     db.close()
@@ -720,6 +729,49 @@ def admin_sample_annotations(sample_id):
         }
         for a in anns
     ]})
+
+
+@app.route("/api/admin/samples/pick-for-onboarding", methods=["POST"])
+@admin_required
+def admin_pick_for_onboarding():
+    """Pick random production samples and convert them to tutorial/calibration."""
+    data = request.get_json(force=True)
+    target_type = data.get("sample_type")
+    count = data.get("count", 5)
+
+    if target_type not in ("tutorial", "calibration"):
+        return jsonify({"error": "sample_type must be tutorial or calibration"}), 400
+
+    db = get_db()
+    # Pick random unclosed production samples that aren't already annotated
+    candidates = db.execute("""
+        SELECT * FROM samples
+        WHERE sample_type = 'production' AND is_closed = 0
+        ORDER BY RANDOM() LIMIT ?
+    """, (count,)).fetchall()
+
+    if not candidates:
+        db.close()
+        return jsonify({"error": "No production samples available"}), 400
+
+    existing_max_order = db.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) as m FROM samples WHERE sample_type = ?",
+        (target_type,)
+    ).fetchone()["m"]
+
+    created = []
+    for i, c in enumerate(candidates):
+        cur = db.execute(
+            """INSERT INTO samples (sample_type, audio_path, recognized_text, sort_order, queue_type, metadata_json)
+               VALUES (?, ?, ?, ?, NULL, ?)""",
+            (target_type, c["audio_path"], c["recognized_text"],
+             existing_max_order + i + 1, c["metadata_json"])
+        )
+        created.append({"id": cur.lastrowid, "audio_path": c["audio_path"]})
+
+    db.commit()
+    db.close()
+    return jsonify({"created": created, "count": len(created)})
 
 
 # ---------------------------------------------------------------------------

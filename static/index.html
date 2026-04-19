@@ -578,6 +578,40 @@ audio {
     </div>
   </div>
 
+  <!-- Golden annotation modal -->
+  <div id="golden-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeGoldenModal()">
+    <div class="modal-content" style="max-width:800px;">
+      <div class="modal-header">
+        <h2>Set Golden Annotation <span id="golden-modal-sample-id" class="text-sm text-muted"></span></h2>
+        <button class="modal-close" onclick="closeGoldenModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="golden-waveform" style="border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;"></div>
+        <div class="waveform-controls" style="margin-top:8px;">
+          <button class="btn btn-sm btn-outline" id="golden-play-btn" onclick="goldenTogglePlay()">▶ Play</button>
+          <span class="time-display" id="golden-time-display">0:00.00 / 0:00.00</span>
+          <div class="speed-control">
+            <label>Speed:</label>
+            <select id="golden-speed-select" onchange="goldenSetSpeed(this.value)">
+              <option value="0.5">0.5×</option>
+              <option value="0.75">0.75×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.25">1.25×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+            </select>
+          </div>
+        </div>
+        <p class="waveform-hint mt-2">Click and drag on the waveform to mark overlap spans.</p>
+        <div id="golden-spans-list" class="mt-2"></div>
+        <div class="mt-4" style="display:flex; gap:8px;">
+          <button class="btn btn-primary" onclick="saveGoldenAnnotation()">Save Golden Annotation</button>
+          <button class="btn btn-outline" onclick="closeGoldenModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Admin screen -->
   <div id="screen-admin" class="hidden">
     <div class="header">
@@ -609,11 +643,12 @@ audio {
 
     <div id="admin-samples" class="card hidden">
       <h3>Tutorial & Calibration Samples</h3>
-      <div class="mt-2 mb-4">
+      <div class="mt-2 mb-4" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         <select id="admin-sample-type-filter" onchange="loadAdminSamples()" style="padding:8px; border-radius:var(--radius); border:1px solid var(--border);">
           <option value="tutorial">Tutorial</option>
           <option value="calibration">Calibration</option>
         </select>
+        <button class="btn btn-sm btn-primary" onclick="pickSamplesForOnboarding()">+ Pick random samples from pool</button>
       </div>
       <div id="admin-samples-list"></div>
     </div>
@@ -1220,7 +1255,7 @@ async function loadAdminUsers() {
   }
   el.innerHTML = `
     <table class="admin-table">
-      <thead><tr><th>ID</th><th>Name</th><th>Code</th><th>Stage</th><th>Admin</th></tr></thead>
+      <thead><tr><th>ID</th><th>Name</th><th>Code</th><th>Stage</th><th>Admin</th><th>Actions</th></tr></thead>
       <tbody>
         ${data.users.map(u => `
           <tr>
@@ -1229,6 +1264,9 @@ async function loadAdminUsers() {
             <td><code>${esc(u.login_code)}</code></td>
             <td>${u.stage}</td>
             <td>${u.is_admin ? 'Yes' : ''}</td>
+            <td>
+              ${u.stage !== 'rules' ? `<button class="btn btn-sm btn-outline" onclick="resetUser(${u.id})">Reset</button>` : ''}
+            </td>
           </tr>
         `).join('')}
       </tbody>
@@ -1258,6 +1296,15 @@ async function createUser() {
   loadAdminUsers();
 }
 
+async function resetUser(userId) {
+  if (!confirm('Reset this user to rules stage? They will redo onboarding.')) return;
+  await api(`/api/admin/users/${userId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ stage: 'rules' }),
+  });
+  loadAdminUsers();
+}
+
 async function loadAdminSamples() {
   const type = document.getElementById('admin-sample-type-filter').value;
   const data = await api(`/api/admin/samples?sample_type=${type}`);
@@ -1277,10 +1324,211 @@ async function loadAdminSamples() {
       <audio controls src="${s.audio_url}" style="width:100%; margin:8px 0;"></audio>
       <p class="text-sm">${esc(s.recognized_text || '')}</p>
       <p class="text-sm mt-2">
-        Golden: <code>${s.golden_annotation ? choiceLabel(s.golden_annotation.ui_choice) : 'Not set'}</code>
+        Golden: <strong>${s.golden_annotation ? goldenSummary(s.golden_annotation) : '<span style="color:var(--danger)">Not set</span>'}</strong>
       </p>
+      <div class="mt-2" style="display:flex; gap:4px; flex-wrap:wrap;">
+        <button class="btn btn-sm btn-outline" onclick="setGolden(${s.id}, 'negative')">Set: Negative</button>
+        <button class="btn btn-sm btn-outline" onclick="setGolden(${s.id}, 'positive_not_localizable')">Set: Positive (not loc.)</button>
+        <button class="btn btn-sm btn-outline" onclick="openGoldenModal(${s.id}, '${s.audio_url}')">Set: Positive (localizable) …</button>
+      </div>
     </div>
   `).join('');
+}
+
+async function pickSamplesForOnboarding() {
+  const type = document.getElementById('admin-sample-type-filter').value;
+  const countStr = prompt(`How many ${type} samples to pick from the production pool?`, '5');
+  if (!countStr) return;
+  const count = parseInt(countStr);
+  if (!count || count < 1) return;
+
+  try {
+    const data = await api('/api/admin/samples/pick-for-onboarding', {
+      method: 'POST',
+      body: JSON.stringify({ sample_type: type, count }),
+    });
+    alert(`Created ${data.count} ${type} samples. Set golden annotations for each one.`);
+    loadAdminSamples();
+  } catch (e) {
+    alert(e.error || 'Failed to pick samples');
+  }
+}
+
+async function setGolden(sampleId, uiChoice) {
+  const golden = { ui_choice: uiChoice, spans: [] };
+  await api(`/api/admin/samples/${sampleId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ golden_annotation: golden }),
+  });
+  loadAdminSamples();
+}
+
+function goldenSummary(g) {
+  let s = choiceLabel(g.ui_choice);
+  if (g.spans && g.spans.length > 0) {
+    s += ` (${g.spans.length} span${g.spans.length > 1 ? 's' : ''})`;
+  }
+  return s;
+}
+
+// ---- Golden annotation modal ----
+let goldenWs = null;
+let goldenRegions = null;
+let goldenSpans = [];
+let goldenSampleId = null;
+let goldenSpanIdCounter = 0;
+
+function openGoldenModal(sampleId, audioUrl) {
+  goldenSampleId = sampleId;
+  goldenSpans = [];
+  goldenSpanIdCounter = 0;
+  document.getElementById('golden-modal-sample-id').textContent = `#${sampleId}`;
+  document.getElementById('golden-modal').classList.remove('hidden');
+  initGoldenWaveform(audioUrl);
+}
+
+function closeGoldenModal() {
+  document.getElementById('golden-modal').classList.add('hidden');
+  if (goldenWs) { goldenWs.destroy(); goldenWs = null; goldenRegions = null; }
+  goldenSpans = [];
+  goldenSampleId = null;
+}
+
+function initGoldenWaveform(audioUrl) {
+  if (goldenWs) { goldenWs.destroy(); goldenWs = null; }
+
+  goldenRegions = WaveSurfer.Regions.create();
+
+  goldenWs = WaveSurfer.create({
+    container: '#golden-waveform',
+    waveColor: '#94a3b8',
+    progressColor: '#2563eb',
+    cursorColor: '#1e293b',
+    cursorWidth: 1,
+    height: 100,
+    barWidth: 2,
+    barGap: 1,
+    barRadius: 2,
+    normalize: true,
+    plugins: [goldenRegions],
+  });
+
+  goldenWs.load(audioUrl);
+
+  goldenWs.on('ready', () => updateGoldenTime());
+  goldenWs.on('audioprocess', updateGoldenTime);
+  goldenWs.on('seeking', updateGoldenTime);
+  goldenWs.on('play', () => { document.getElementById('golden-play-btn').textContent = '\u23f8 Pause'; });
+  goldenWs.on('pause', () => { document.getElementById('golden-play-btn').textContent = '\u25b6 Play'; });
+
+  goldenRegions.enableDragSelection({ color: REGION_COLORS[0] });
+
+  goldenRegions.on('region-created', (region) => {
+    const colorIdx = goldenSpans.length % REGION_COLORS.length;
+    region.setOptions({ color: REGION_COLORS[colorIdx] });
+    goldenSpans.push({
+      id: ++goldenSpanIdCounter,
+      start: Math.round(region.start * 100) / 100,
+      end: Math.round(region.end * 100) / 100,
+      intelligibility: 'full',
+      text: '',
+      regionRef: region,
+    });
+    renderGoldenSpans();
+  });
+
+  goldenRegions.on('region-updated', (region) => {
+    const span = goldenSpans.find(s => s.regionRef === region);
+    if (span) {
+      span.start = Math.round(region.start * 100) / 100;
+      span.end = Math.round(region.end * 100) / 100;
+      renderGoldenSpans();
+    }
+  });
+}
+
+function updateGoldenTime() {
+  if (!goldenWs) return;
+  const cur = goldenWs.getCurrentTime();
+  const dur = goldenWs.getDuration();
+  document.getElementById('golden-time-display').textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+}
+
+function goldenTogglePlay() { if (goldenWs) goldenWs.playPause(); }
+
+function goldenSetSpeed(val) {
+  if (goldenWs) goldenWs.setPlaybackRate(parseFloat(val));
+}
+
+function goldenPlaySpan(idx) {
+  const span = goldenSpans[idx];
+  if (span && goldenWs) {
+    goldenWs.setTime(span.start);
+    goldenWs.play();
+  }
+}
+
+function goldenRemoveSpan(idx) {
+  const span = goldenSpans[idx];
+  if (span && span.regionRef) span.regionRef.remove();
+  goldenSpans.splice(idx, 1);
+  renderGoldenSpans();
+}
+
+function renderGoldenSpans() {
+  const list = document.getElementById('golden-spans-list');
+  if (goldenSpans.length === 0) {
+    list.innerHTML = '<p class="text-sm text-muted">No spans yet. Drag on the waveform to create one.</p>';
+    return;
+  }
+  list.innerHTML = goldenSpans.map((s, i) => `
+    <div class="span-item" style="border-left-color: ${REGION_COLORS[i % REGION_COLORS.length].replace(/[\d.]+\)$/, '0.8)')}">
+      <div class="span-header">
+        <span><strong>Span ${i + 1}</strong>
+          <span class="span-times">${s.start.toFixed(2)}s \u2014 ${s.end.toFixed(2)}s (${(s.end - s.start).toFixed(2)}s)</span>
+        </span>
+        <span style="display:flex; gap:4px; align-items:center;">
+          <button class="btn btn-sm btn-outline" onclick="goldenPlaySpan(${i})" title="Play">\u25b6</button>
+          <button class="btn btn-sm btn-danger" onclick="goldenRemoveSpan(${i})">\u2715</button>
+        </span>
+      </div>
+      <div class="span-fields">
+        <div>
+          <label>Intelligibility</label>
+          <select onchange="goldenSpans[${i}].intelligibility = this.value" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:var(--radius);">
+            <option value="full" ${s.intelligibility === 'full' ? 'selected' : ''}>Full</option>
+            <option value="partial" ${s.intelligibility === 'partial' ? 'selected' : ''}>Partial</option>
+            <option value="none" ${s.intelligibility === 'none' ? 'selected' : ''}>None</option>
+          </select>
+        </div>
+        <div class="span-text">
+          <label>Text (optional)</label>
+          <textarea onchange="goldenSpans[${i}].text = this.value">${s.text}</textarea>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function saveGoldenAnnotation() {
+  if (goldenSpans.length === 0) {
+    if (!confirm('No spans marked. Save as positive localizable with zero spans?')) return;
+  }
+  const golden = {
+    ui_choice: 'positive_localizable',
+    spans: goldenSpans.map(s => ({
+      start: s.start,
+      end: s.end,
+      intelligibility: s.intelligibility,
+      text: s.text,
+    })),
+  };
+  await api(`/api/admin/samples/${goldenSampleId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ golden_annotation: golden }),
+  });
+  closeGoldenModal();
+  loadAdminSamples();
 }
 
 async function loadAdminProduction() {
