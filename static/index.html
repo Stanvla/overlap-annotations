@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overlap Annotation</title>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+<style>
+:root {
+  --bg: #f5f5f5;
+  --card: #fff;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --text: #1e293b;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+h1, h2, h3 { margin-bottom: 12px; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.25rem; }
+
+.btn {
+  display: inline-block;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-primary:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-success {
+  background: var(--success);
+  color: #fff;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 2px solid var(--primary);
+  color: var(--primary);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.875rem;
+}
+
+input[type="text"], input[type="number"], textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  margin-bottom: 12px;
+}
+
+.progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.progress-bar .bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar .bar-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+/* Choice buttons */
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.choice-btn {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  font-size: 1rem;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.choice-btn:hover {
+  border-color: var(--primary);
+  background: #eff6ff;
+}
+
+.choice-btn.selected {
+  border-color: var(--primary);
+  background: #dbeafe;
+  font-weight: 600;
+}
+
+/* Spans editor */
+.spans-section {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #f8fafc;
+}
+
+.span-item {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+}
+
+.span-item .span-header {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.span-item .span-times {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.span-item .span-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.span-item .span-text {
+  grid-column: 1 / -1;
+}
+
+.span-item label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.span-item input, .span-item select, .span-item textarea {
+  margin-bottom: 0;
+}
+
+.span-item textarea {
+  resize: vertical;
+  min-height: 40px;
+}
+
+.feedback-box {
+  padding: 16px;
+  border-radius: var(--radius);
+  margin: 16px 0;
+}
+
+.feedback-correct {
+  background: #dcfce7;
+  border: 1px solid #86efac;
+}
+
+.feedback-incorrect {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+}
+
+.feedback-neutral {
+  background: #f0f9ff;
+  border: 1px solid #93c5fd;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.header .user-info {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.stage-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.stage-tutorial { background: #fef3c7; color: #92400e; }
+.stage-calibration { background: #e0e7ff; color: #3730a3; }
+.stage-production { background: #dcfce7; color: #166534; }
+
+audio {
+  width: 100%;
+  margin: 12px 0;
+}
+
+/* Waveform */
+#waveform-wrap {
+  margin: 12px 0;
+}
+
+#waveform {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.waveform-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.waveform-controls .time-display {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-width: 90px;
+}
+
+.waveform-controls .speed-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.waveform-controls .speed-control label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.waveform-controls .speed-control select {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  background: var(--card);
+  cursor: pointer;
+}
+
+.loop-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--muted);
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.loop-toggle:hover {
+  border-color: var(--primary);
+}
+
+.loop-toggle.active {
+  background: #dbeafe;
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.waveform-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.hidden { display: none !important; }
+
+.text-muted { color: var(--muted); }
+.text-sm { font-size: 0.875rem; }
+.mt-2 { margin-top: 8px; }
+.mt-4 { margin-top: 16px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-4 { margin-bottom: 16px; }
+
+.calibration-result {
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.calibration-result.match { border-left: 4px solid var(--success); }
+.calibration-result.mismatch { border-left: 4px solid var(--danger); }
+
+/* Admin styles */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.admin-table th, .admin-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.admin-tab {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  font-size: 0.875rem;
+}
+
+.admin-tab.active {
+  border-bottom-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+</style>
+</head>
+<body>
+
+<div class="container" id="app">
+  <!-- Login screen -->
+  <div id="screen-login" class="card">
+    <h1>Overlap Annotation Tool</h1>
+    <p class="text-muted mb-4">Enter your login code to continue.</p>
+    <input type="text" id="login-code" placeholder="Login code" autocomplete="off">
+    <button class="btn btn-primary" onclick="doLogin()">Log In</button>
+    <p id="login-error" class="text-sm hidden" style="color:var(--danger); margin-top:8px;"></p>
+  </div>
+
+  <!-- Main app (hidden until login) -->
+  <div id="screen-main" class="hidden">
+    <div class="header">
+      <div>
+        <span id="stage-badge" class="stage-badge"></span>
+      </div>
+      <div class="user-info">
+        <span id="user-name"></span>
+        <button class="btn btn-sm btn-outline" onclick="doLogout()" style="margin-left:8px;">Logout</button>
+        <button id="admin-btn" class="btn btn-sm btn-outline hidden" onclick="showAdmin()" style="margin-left:4px;">Admin</button>
+      </div>
+    </div>
+
+    <!-- Rules screen -->
+    <div id="mode-rules" class="card hidden">
+      <h2>Annotation Rules</h2>
+      <div style="margin:16px 0; line-height:1.6;">
+        <p><strong>Your task:</strong> Listen to each audio segment and decide whether overlapping speech is present.</p>
+        <br>
+        <p><strong>Option 1 — No useful overlap:</strong> The segment has no meaningful overlap between speakers.</p>
+        <br>
+        <p><strong>Option 2 — Overlap exists, not localizable:</strong> You hear overlap, but you cannot reliably determine where it starts and ends.</p>
+        <br>
+        <p><strong>Option 3 — Overlap exists, localizable:</strong> You hear overlap and you can mark the time spans where it occurs. For each span, indicate how intelligible the overlapping speech is and optionally transcribe what you hear.</p>
+        <br>
+        <p>After reading these rules, click the button below to begin the tutorial.</p>
+      </div>
+      <button class="btn btn-primary" onclick="acknowledgeRules()">I've Read the Rules — Start Tutorial</button>
+    </div>
+
+    <!-- Annotation screen (shared by tutorial/calibration/production) -->
+    <div id="mode-annotation" class="card hidden">
+      <div id="anno-progress" class="progress-bar hidden">
+        <span id="anno-progress-text"></span>
+        <div class="bar"><div class="bar-fill" id="anno-progress-fill"></div></div>
+      </div>
+
+      <div id="anno-recognized-text" class="text-sm text-muted mb-2"></div>
+      <div id="waveform-wrap">
+        <div id="waveform"></div>
+        <div class="waveform-controls">
+          <button class="btn btn-sm btn-outline" id="play-btn" onclick="togglePlay()">▶ Play</button>
+          <span class="time-display" id="time-display">0:00.00 / 0:00.00</span>
+          <div class="speed-control">
+            <label>Speed:</label>
+            <select id="speed-select" onchange="setSpeed(this.value)">
+              <option value="0.5">0.5×</option>
+              <option value="0.75">0.75×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.25">1.25×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <audio id="anno-audio" style="display:none"></audio>
+
+      <div class="choices">
+        <button class="choice-btn" data-choice="negative" onclick="selectChoice(this)">
+          1. No useful overlap
+        </button>
+        <button class="choice-btn" data-choice="positive_not_localizable" onclick="selectChoice(this)">
+          2. Overlap exists, but cannot be localized reliably
+        </button>
+        <button class="choice-btn" data-choice="positive_localizable" onclick="selectChoice(this)">
+          3. Overlap exists and can be localized
+        </button>
+      </div>
+
+      <!-- Span editor (only for option 3) -->
+      <div id="spans-editor" class="spans-section hidden">
+        <h3>Overlap Spans</h3>
+        <p class="waveform-hint" id="waveform-hint">Click and drag on the waveform above to mark overlap regions.</p>
+        <div id="spans-list"></div>
+      </div>
+
+      <button id="submit-btn" class="btn btn-primary mt-4" onclick="submitAnnotation()" disabled>
+        Submit
+      </button>
+
+      <!-- Tutorial feedback -->
+      <div id="feedback-area" class="hidden"></div>
+    </div>
+
+    <!-- No samples available -->
+    <div id="mode-empty" class="card hidden">
+      <h2>No Samples Available</h2>
+      <p class="text-muted">There are currently no samples to annotate. Please check back later.</p>
+      <button class="btn btn-primary mt-4" onclick="loadTask()">Refresh</button>
+    </div>
+
+    <!-- Calibration results -->
+    <div id="mode-calibration-results" class="card hidden">
+      <h2>Calibration Complete!</h2>
+      <p class="text-muted mb-4">Here are your answers compared to the correct ones:</p>
+      <div id="calibration-results-list"></div>
+      <button class="btn btn-primary mt-4" onclick="loadTask()">Continue to Production</button>
+    </div>
+  </div>
+
+  <!-- Admin screen -->
+  <div id="screen-admin" class="hidden">
+    <div class="header">
+      <h1>Admin Panel</h1>
+      <button class="btn btn-sm btn-outline" onclick="hideAdmin()">Back to Annotation</button>
+    </div>
+    <div class="admin-tabs">
+      <button class="admin-tab active" onclick="adminTab('users', this)">Users</button>
+      <button class="admin-tab" onclick="adminTab('samples', this)">Tutorial/Calibration</button>
+      <button class="admin-tab" onclick="adminTab('production', this)">Production</button>
+    </div>
+
+    <div id="admin-users" class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3>Annotators</h3>
+        <button class="btn btn-sm btn-primary" onclick="showCreateUser()">+ Create User</button>
+      </div>
+      <div id="admin-users-create" class="hidden" style="padding:12px; background:#f8fafc; border-radius:var(--radius); margin-bottom:12px;">
+        <input type="text" id="new-user-name" placeholder="Display name">
+        <input type="text" id="new-user-code" placeholder="Login code (auto-generated if empty)">
+        <label><input type="checkbox" id="new-user-admin"> Admin</label>
+        <div class="mt-2">
+          <button class="btn btn-sm btn-primary" onclick="createUser()">Create</button>
+          <button class="btn btn-sm btn-outline" onclick="document.getElementById('admin-users-create').classList.add('hidden')">Cancel</button>
+        </div>
+      </div>
+      <div id="admin-users-list"></div>
+    </div>
+
+    <div id="admin-samples" class="card hidden">
+      <h3>Tutorial & Calibration Samples</h3>
+      <div class="mt-2 mb-4">
+        <select id="admin-sample-type-filter" onchange="loadAdminSamples()" style="padding:8px; border-radius:var(--radius); border:1px solid var(--border);">
+          <option value="tutorial">Tutorial</option>
+          <option value="calibration">Calibration</option>
+        </select>
+      </div>
+      <div id="admin-samples-list"></div>
+    </div>
+
+    <div id="admin-production" class="card hidden">
+      <h3>Production Samples</h3>
+      <p class="text-sm text-muted mb-2">Showing recent production samples with annotations.</p>
+      <div id="admin-production-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- State ----
+let currentUser = null;
+let currentTask = null;
+let selectedChoice = null;
+let spans = [];       // { id, start, end, intelligibility, text, regionRef }
+let submitting = false;
+let wavesurfer = null;
+let wsRegions = null;
+let spanIdCounter = 0;
+let activeSpanPlay = null; // { idx, looping }
+let playbackSpeed = 1;
+
+const REGION_COLORS = [
+  'rgba(37, 99, 235, 0.25)',
+  'rgba(220, 38, 38, 0.20)',
+  'rgba(22, 163, 74, 0.20)',
+  'rgba(234, 88, 12, 0.20)',
+  'rgba(124, 58, 237, 0.20)',
+];
+
+// ---- API helpers ----
+async function api(url, opts = {}) {
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  const data = await res.json();
+  if (!res.ok) throw { status: res.status, ...data };
+  return data;
+}
+
+// ---- Auth ----
+async function doLogin() {
+  const code = document.getElementById('login-code').value.trim();
+  if (!code) return;
+  try {
+    const data = await api('/api/login', { method: 'POST', body: JSON.stringify({ login_code: code }) });
+    currentUser = data.user;
+    showMain();
+  } catch (e) {
+    const el = document.getElementById('login-error');
+    el.textContent = e.error || 'Login failed';
+    el.classList.remove('hidden');
+  }
+}
+
+document.getElementById('login-code').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+async function doLogout() {
+  await api('/api/logout', { method: 'POST' });
+  currentUser = null;
+  document.getElementById('screen-main').classList.add('hidden');
+  document.getElementById('screen-admin').classList.add('hidden');
+  document.getElementById('screen-login').classList.remove('hidden');
+  document.getElementById('login-code').value = '';
+}
+
+async function checkSession() {
+  try {
+    const data = await api('/api/me');
+    currentUser = data.user;
+    showMain();
+  } catch {
+    document.getElementById('screen-login').classList.remove('hidden');
+  }
+}
+
+// ---- Main screen ----
+function showMain() {
+  document.getElementById('screen-login').classList.add('hidden');
+  document.getElementById('screen-admin').classList.add('hidden');
+  document.getElementById('screen-main').classList.remove('hidden');
+  document.getElementById('user-name').textContent = currentUser.display_name;
+
+  if (currentUser.is_admin) {
+    document.getElementById('admin-btn').classList.remove('hidden');
+  } else {
+    document.getElementById('admin-btn').classList.add('hidden');
+  }
+
+  loadTask();
+}
+
+function updateStageBadge(mode) {
+  const badge = document.getElementById('stage-badge');
+  badge.className = 'stage-badge';
+  if (mode === 'tutorial') { badge.textContent = 'Tutorial'; badge.classList.add('stage-tutorial'); }
+  else if (mode === 'calibration') { badge.textContent = 'Calibration'; badge.classList.add('stage-calibration'); }
+  else if (mode === 'production') { badge.textContent = 'Production'; badge.classList.add('stage-production'); }
+  else { badge.textContent = mode; }
+}
+
+function hideAllModes() {
+  ['mode-rules', 'mode-annotation', 'mode-empty', 'mode-calibration-results'].forEach(id => {
+    document.getElementById(id).classList.add('hidden');
+  });
+}
+
+async function loadTask() {
+  hideAllModes();
+  resetAnnotationUI();
+  try {
+    const data = await api('/api/task/current');
+    currentTask = data;
+    updateStageBadge(data.mode);
+
+    if (data.mode === 'rules') {
+      document.getElementById('mode-rules').classList.remove('hidden');
+    } else if (data.mode === 'production' && !data.sample) {
+      document.getElementById('mode-empty').classList.remove('hidden');
+    } else {
+      renderAnnotationScreen(data);
+    }
+  } catch (e) {
+    console.error('loadTask error', e);
+  }
+}
+
+function resetAnnotationUI() {
+  selectedChoice = null;
+  spans = [];
+  spanIdCounter = 0;
+  submitting = false;
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('feedback-area').classList.add('hidden');
+  document.getElementById('feedback-area').innerHTML = '';
+  document.getElementById('spans-editor').classList.add('hidden');
+  document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));
+  if (wsRegions) wsRegions.clearRegions();
+}
+
+function renderAnnotationScreen(data) {
+  document.getElementById('mode-annotation').classList.remove('hidden');
+
+  // Progress
+  const prog = document.getElementById('anno-progress');
+  if (data.mode === 'tutorial' || data.mode === 'calibration') {
+    prog.classList.remove('hidden');
+    document.getElementById('anno-progress-text').textContent =
+      `${data.mode === 'tutorial' ? 'Tutorial' : 'Calibration'} ${data.index + 1} / ${data.total}`;
+    const pct = ((data.index) / data.total) * 100;
+    document.getElementById('anno-progress-fill').style.width = pct + '%';
+  } else {
+    prog.classList.add('hidden');
+  }
+
+  // Text
+  const textEl = document.getElementById('anno-recognized-text');
+  if (data.sample.recognized_text) {
+    textEl.textContent = 'Transcript: ' + data.sample.recognized_text;
+    textEl.classList.remove('hidden');
+  } else {
+    textEl.classList.add('hidden');
+  }
+
+  // Waveform
+  initWaveform(data.sample.audio_url);
+}
+
+function initWaveform(audioUrl) {
+  if (wavesurfer) {
+    wavesurfer.destroy();
+    wavesurfer = null;
+    wsRegions = null;
+  }
+
+  wsRegions = WaveSurfer.Regions.create();
+
+  wavesurfer = WaveSurfer.create({
+    container: '#waveform',
+    waveColor: '#94a3b8',
+    progressColor: '#2563eb',
+    cursorColor: '#1e293b',
+    cursorWidth: 1,
+    height: 100,
+    barWidth: 2,
+    barGap: 1,
+    barRadius: 2,
+    normalize: true,
+    plugins: [wsRegions],
+  });
+
+  wavesurfer.load(audioUrl);
+
+  wavesurfer.on('ready', () => {
+    updateTimeDisplay();
+    wavesurfer.setPlaybackRate(playbackSpeed);
+  });
+
+  wavesurfer.on('audioprocess', (time) => {
+    updateTimeDisplay();
+    // Auto-stop / loop at span end
+    if (activeSpanPlay !== null) {
+      const span = spans[activeSpanPlay.idx];
+      if (span && time >= span.end) {
+        if (activeSpanPlay.looping) {
+          wavesurfer.setTime(span.start);
+          wavesurfer.play();
+        } else {
+          wavesurfer.pause();
+          wavesurfer.setTime(span.end);
+          activeSpanPlay = null;
+        }
+      }
+    }
+  });
+  wavesurfer.on('seeking', () => {
+    updateTimeDisplay();
+    // If user clicks elsewhere on the waveform, cancel span playback
+    if (activeSpanPlay !== null) {
+      const span = spans[activeSpanPlay.idx];
+      if (span) {
+        const cur = wavesurfer.getCurrentTime();
+        if (cur < span.start - 0.05 || cur > span.end + 0.05) {
+          activeSpanPlay = null;
+        }
+      }
+    }
+  });
+
+  wavesurfer.on('play', () => {
+    document.getElementById('play-btn').textContent = '⏸ Pause';
+  });
+  wavesurfer.on('pause', () => {
+    document.getElementById('play-btn').textContent = '▶ Play';
+  });
+
+  // Region creation — only active when option 3 is selected
+  wsRegions.enableDragSelection({
+    color: REGION_COLORS[0],
+  });
+
+  wsRegions.on('region-created', (region) => {
+    if (selectedChoice !== 'positive_localizable') {
+      region.remove();
+      return;
+    }
+    const sid = ++spanIdCounter;
+    const colorIdx = spans.length % REGION_COLORS.length;
+    region.setOptions({ color: REGION_COLORS[colorIdx] });
+    region.element.title = `Span ${sid}`;
+    spans.push({
+      id: sid,
+      start: Math.round(region.start * 100) / 100,
+      end: Math.round(region.end * 100) / 100,
+      intelligibility: 'full',
+      text: '',
+      regionRef: region,
+    });
+    renderSpans();
+  });
+
+  wsRegions.on('region-updated', (region) => {
+    const span = spans.find(s => s.regionRef === region);
+    if (span) {
+      span.start = Math.round(region.start * 100) / 100;
+      span.end = Math.round(region.end * 100) / 100;
+      renderSpans();
+    }
+  });
+}
+
+function updateTimeDisplay() {
+  if (!wavesurfer) return;
+  const cur = wavesurfer.getCurrentTime();
+  const dur = wavesurfer.getDuration();
+  document.getElementById('time-display').textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+}
+
+function fmtTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s.toFixed(2)}`;
+}
+
+function togglePlay() {
+  if (!wavesurfer) return;
+  activeSpanPlay = null;
+  wavesurfer.playPause();
+}
+
+function setSpeed(val) {
+  playbackSpeed = parseFloat(val);
+  if (wavesurfer) {
+    wavesurfer.setPlaybackRate(playbackSpeed);
+  }
+}
+
+function selectChoice(btn) {
+  document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedChoice = btn.dataset.choice;
+
+  // Show/hide spans editor
+  if (selectedChoice === 'positive_localizable') {
+    document.getElementById('spans-editor').classList.remove('hidden');
+  } else {
+    document.getElementById('spans-editor').classList.add('hidden');
+  }
+
+  document.getElementById('submit-btn').disabled = false;
+}
+
+function removeSpan(idx) {
+  const span = spans[idx];
+  if (span && span.regionRef) {
+    span.regionRef.remove();
+  }
+  spans.splice(idx, 1);
+  renderSpans();
+}
+
+function playSpan(idx) {
+  const span = spans[idx];
+  if (!span || !wavesurfer) return;
+  const looping = activeSpanPlay && activeSpanPlay.idx === idx ? activeSpanPlay.looping : false;
+  activeSpanPlay = { idx: idx, looping: looping };
+  wavesurfer.setTime(span.start);
+  wavesurfer.play();
+}
+
+function toggleSpanLoop(idx) {
+  if (activeSpanPlay && activeSpanPlay.idx === idx && activeSpanPlay.looping) {
+    // Disable looping (keep playing but will stop at end)
+    activeSpanPlay.looping = false;
+    renderSpans();
+  } else {
+    // Enable looping for this span
+    if (!activeSpanPlay || activeSpanPlay.idx !== idx) {
+      activeSpanPlay = { idx: idx, looping: true };
+    } else {
+      activeSpanPlay.looping = true;
+    }
+    renderSpans();
+  }
+}
+
+function renderSpans() {
+  const list = document.getElementById('spans-list');
+  if (spans.length === 0) {
+    list.innerHTML = '';
+    return;
+  }
+  list.innerHTML = spans.map((s, i) => `
+    <div class="span-item" style="border-left-color: ${REGION_COLORS[i % REGION_COLORS.length].replace(/[\d.]+\)$/, '0.8)')}">
+      <div class="span-header">
+        <span><strong>Span ${i + 1}</strong>
+          <span class="span-times">${s.start.toFixed(2)}s — ${s.end.toFixed(2)}s (${(s.end - s.start).toFixed(2)}s)</span>
+        </span>
+        <span style="display:flex; gap:4px; align-items:center;">
+          <button class="btn btn-sm btn-outline" onclick="playSpan(${i})" title="Play this span">▶</button>
+          <button class="loop-toggle ${activeSpanPlay && activeSpanPlay.idx === i && activeSpanPlay.looping ? 'active' : ''}" onclick="toggleSpanLoop(${i})" title="Loop this span">🔁 Loop</button>
+          <button class="btn btn-sm btn-danger" onclick="removeSpan(${i})">✕</button>
+        </span>
+      </div>
+      <div class="span-fields">
+        <div>
+          <label>Intelligibility</label>
+          <select onchange="spans[${i}].intelligibility = this.value" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:var(--radius);">
+            <option value="full" ${s.intelligibility === 'full' ? 'selected' : ''}>Full</option>
+            <option value="partial" ${s.intelligibility === 'partial' ? 'selected' : ''}>Partial</option>
+            <option value="none" ${s.intelligibility === 'none' ? 'selected' : ''}>None</option>
+          </select>
+        </div>
+        <div class="span-text">
+          <label>Text (optional)</label>
+          <textarea onchange="spans[${i}].text = this.value">${s.text}</textarea>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function submitAnnotation() {
+  if (!selectedChoice || submitting) return;
+  submitting = true;
+  document.getElementById('submit-btn').disabled = true;
+
+  const payload = {
+    ui_choice: selectedChoice,
+    spans: selectedChoice === 'positive_localizable' ? spans.map(s => ({
+      start: s.start,
+      end: s.end,
+      intelligibility: s.intelligibility,
+      text: s.text,
+    })) : [],
+  };
+
+  try {
+    const data = await api('/api/task/submit', {
+      method: 'POST',
+      body: JSON.stringify({
+        sample_id: currentTask.sample.id,
+        annotation_data: payload,
+      }),
+    });
+
+    if (currentTask.mode === 'tutorial' && data.feedback) {
+      showTutorialFeedback(data.feedback, payload);
+    } else if (data.calibration_results) {
+      showCalibrationResults(data.calibration_results);
+      return;
+    }
+
+    // For production or after tutorial feedback, load next
+    if (currentTask.mode !== 'tutorial') {
+      setTimeout(loadTask, 300);
+    }
+  } catch (e) {
+    console.error('submit error', e);
+    alert(e.error || 'Submit failed');
+    submitting = false;
+    document.getElementById('submit-btn').disabled = false;
+  }
+}
+
+function showTutorialFeedback(golden, userAnswer) {
+  const area = document.getElementById('feedback-area');
+  area.classList.remove('hidden');
+
+  const goldenChoice = golden.ui_choice;
+  const userChoice = userAnswer.ui_choice;
+
+  // Derive coarse labels
+  const goldenLabel = goldenChoice === 'negative' ? 'negative' : 'positive';
+  const userLabel = userChoice === 'negative' ? 'negative' : 'positive';
+  const isCorrect = goldenLabel === userLabel;
+
+  area.innerHTML = `
+    <div class="feedback-box ${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}">
+      <strong>${isCorrect ? '✓ Correct!' : '✗ Incorrect'}</strong>
+      <p class="mt-2 text-sm">
+        Your answer: <strong>${choiceLabel(userChoice)}</strong><br>
+        Correct answer: <strong>${choiceLabel(goldenChoice)}</strong>
+      </p>
+    </div>
+    <button class="btn btn-primary mt-2" onclick="loadTask()">Next</button>
+  `;
+}
+
+function choiceLabel(c) {
+  if (c === 'negative') return 'No useful overlap';
+  if (c === 'positive_not_localizable') return 'Overlap, not localizable';
+  if (c === 'positive_localizable') return 'Overlap, localizable';
+  return c;
+}
+
+function showCalibrationResults(results) {
+  hideAllModes();
+  document.getElementById('mode-calibration-results').classList.remove('hidden');
+
+  const list = document.getElementById('calibration-results-list');
+  list.innerHTML = results.map((r, i) => {
+    const goldenLabel = r.golden ? (r.golden.ui_choice === 'negative' ? 'negative' : 'positive') : '?';
+    const userLabel = r.your_answer ? (r.your_answer.ui_choice === 'negative' ? 'negative' : 'positive') : '?';
+    const match = goldenLabel === userLabel;
+    return `
+      <div class="calibration-result ${match ? 'match' : 'mismatch'}">
+        <strong>Sample ${i + 1}</strong> — ${match ? '✓ Match' : '✗ Mismatch'}
+        <p class="text-sm mt-2">
+          Your answer: <strong>${r.your_answer ? choiceLabel(r.your_answer.ui_choice) : 'N/A'}</strong><br>
+          Correct: <strong>${r.golden ? choiceLabel(r.golden.ui_choice) : 'N/A'}</strong>
+        </p>
+        <audio controls src="${r.sample.audio_url}" class="mt-2" style="width:100%;"></audio>
+      </div>
+    `;
+  }).join('');
+}
+
+async function acknowledgeRules() {
+  await api('/api/rules/acknowledge', { method: 'POST' });
+  loadTask();
+}
+
+// ---- Admin ----
+function showAdmin() {
+  document.getElementById('screen-main').classList.add('hidden');
+  document.getElementById('screen-admin').classList.remove('hidden');
+  loadAdminUsers();
+}
+
+function hideAdmin() {
+  document.getElementById('screen-admin').classList.add('hidden');
+  document.getElementById('screen-main').classList.remove('hidden');
+  loadTask();
+}
+
+function adminTab(tab, btn) {
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  ['admin-users', 'admin-samples', 'admin-production'].forEach(id => document.getElementById(id).classList.add('hidden'));
+
+  if (tab === 'users') {
+    document.getElementById('admin-users').classList.remove('hidden');
+    loadAdminUsers();
+  } else if (tab === 'samples') {
+    document.getElementById('admin-samples').classList.remove('hidden');
+    loadAdminSamples();
+  } else if (tab === 'production') {
+    document.getElementById('admin-production').classList.remove('hidden');
+    loadAdminProduction();
+  }
+}
+
+async function loadAdminUsers() {
+  const data = await api('/api/admin/users');
+  const el = document.getElementById('admin-users-list');
+  if (!data.users.length) {
+    el.innerHTML = '<p class="text-muted">No users yet.</p>';
+    return;
+  }
+  el.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Name</th><th>Code</th><th>Stage</th><th>Admin</th></tr></thead>
+      <tbody>
+        ${data.users.map(u => `
+          <tr>
+            <td>${u.id}</td>
+            <td>${esc(u.display_name)}</td>
+            <td><code>${esc(u.login_code)}</code></td>
+            <td>${u.stage}</td>
+            <td>${u.is_admin ? 'Yes' : ''}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function showCreateUser() {
+  document.getElementById('admin-users-create').classList.remove('hidden');
+}
+
+async function createUser() {
+  const name = document.getElementById('new-user-name').value.trim();
+  if (!name) return alert('Name required');
+  const code = document.getElementById('new-user-code').value.trim();
+  const isAdmin = document.getElementById('new-user-admin').checked;
+
+  await api('/api/admin/users', {
+    method: 'POST',
+    body: JSON.stringify({ display_name: name, login_code: code || undefined, is_admin: isAdmin }),
+  });
+
+  document.getElementById('new-user-name').value = '';
+  document.getElementById('new-user-code').value = '';
+  document.getElementById('new-user-admin').checked = false;
+  document.getElementById('admin-users-create').classList.add('hidden');
+  loadAdminUsers();
+}
+
+async function loadAdminSamples() {
+  const type = document.getElementById('admin-sample-type-filter').value;
+  const data = await api(`/api/admin/samples?sample_type=${type}`);
+  const el = document.getElementById('admin-samples-list');
+
+  if (!data.samples.length) {
+    el.innerHTML = '<p class="text-muted">No samples of this type.</p>';
+    return;
+  }
+
+  el.innerHTML = data.samples.map(s => `
+    <div class="card" style="padding:12px;">
+      <div style="display:flex; justify-content:space-between;">
+        <strong>#${s.id}</strong>
+        <span class="text-sm text-muted">Order: ${s.sort_order}</span>
+      </div>
+      <audio controls src="${s.audio_url}" style="width:100%; margin:8px 0;"></audio>
+      <p class="text-sm">${esc(s.recognized_text || '')}</p>
+      <p class="text-sm mt-2">
+        Golden: <code>${s.golden_annotation ? choiceLabel(s.golden_annotation.ui_choice) : 'Not set'}</code>
+      </p>
+    </div>
+  `).join('');
+}
+
+async function loadAdminProduction() {
+  const data = await api('/api/admin/samples?sample_type=production');
+  const el = document.getElementById('admin-production-list');
+
+  if (!data.samples.length) {
+    el.innerHTML = '<p class="text-muted">No production samples.</p>';
+    return;
+  }
+
+  // Show first 50
+  const shown = data.samples.slice(0, 50);
+  el.innerHTML = `
+    <p class="text-sm text-muted mb-2">Showing ${shown.length} of ${data.samples.length} samples</p>
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Queue</th><th>Closed</th><th>Accepted</th><th>Actions</th></tr></thead>
+      <tbody>
+        ${shown.map(s => `
+          <tr>
+            <td>${s.id}</td>
+            <td>${s.queue_type || '-'}</td>
+            <td>${s.is_closed ? 'Yes' : 'No'}</td>
+            <td>${s.accepted_annotation_count}</td>
+            <td><button class="btn btn-sm btn-outline" onclick="viewAnnotations(${s.id})">View</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function viewAnnotations(sampleId) {
+  const data = await api(`/api/admin/samples/${sampleId}/annotations`);
+  const anns = data.annotations;
+  let html = `<h3 class="mb-2">Annotations for Sample #${sampleId}</h3>`;
+  if (!anns.length) {
+    html += '<p class="text-muted">No annotations yet.</p>';
+  } else {
+    html += anns.map(a => `
+      <div class="card" style="padding:12px; margin-bottom:8px;">
+        <strong>${esc(a.display_name)}</strong> — ${a.label} (${a.status})
+        <p class="text-sm text-muted">${a.created_at}</p>
+        <pre class="text-sm mt-2" style="background:#f8fafc; padding:8px; border-radius:4px; overflow-x:auto;">${esc(JSON.stringify(a.annotation_data, null, 2))}</pre>
+      </div>
+    `).join('');
+  }
+  html += `<button class="btn btn-sm btn-outline mt-2" onclick="loadAdminProduction()">Back</button>`;
+  document.getElementById('admin-production-list').innerHTML = html;
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ---- Init ----
+checkSession();
+</script>
+</body>
+</html>
