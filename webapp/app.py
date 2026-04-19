@@ -513,6 +513,20 @@ def acknowledge_rules():
 
 
 # ---------------------------------------------------------------------------
+# Rules
+# ---------------------------------------------------------------------------
+
+RULES_PATH = os.path.join(os.path.dirname(__file__), "..", "annotatori_pravidla_overlap.md")
+
+@app.route("/api/rules")
+def get_rules():
+    if not os.path.isfile(RULES_PATH):
+        return jsonify({"content": ""}), 404
+    with open(RULES_PATH, "r", encoding="utf-8") as f:
+        return jsonify({"content": f.read()})
+
+
+# ---------------------------------------------------------------------------
 # Audio serving
 # ---------------------------------------------------------------------------
 

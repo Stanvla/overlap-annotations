@@ -404,6 +404,64 @@ audio {
   color: var(--primary);
   font-weight: 600;
 }
+
+/* Rules modal */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-content {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+  max-width: 720px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 { margin-bottom: 0; }
+
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  line-height: 1.7;
+}
+
+.modal-body h1 { font-size: 1.4rem; margin: 20px 0 8px; }
+.modal-body h2 { font-size: 1.15rem; margin: 18px 0 6px; }
+.modal-body h3 { font-size: 1rem; margin: 14px 0 4px; }
+.modal-body p { margin-bottom: 10px; }
+.modal-body ul, .modal-body ol { margin: 8px 0 8px 20px; }
+.modal-body li { margin-bottom: 4px; }
+.modal-body strong { color: var(--text); }
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px 8px;
+  line-height: 1;
+}
+.modal-close:hover { color: var(--text); }
 </style>
 </head>
 <body>
@@ -426,26 +484,16 @@ audio {
       </div>
       <div class="user-info">
         <span id="user-name"></span>
-        <button class="btn btn-sm btn-outline" onclick="doLogout()" style="margin-left:8px;">Logout</button>
+        <button class="btn btn-sm btn-outline" onclick="openRulesModal()" title="Pravidla anotace" style="margin-left:8px;">ℹ️ Pravidla</button>
+        <button class="btn btn-sm btn-outline" onclick="doLogout()" style="margin-left:4px;">Logout</button>
         <button id="admin-btn" class="btn btn-sm btn-outline hidden" onclick="showAdmin()" style="margin-left:4px;">Admin</button>
       </div>
     </div>
 
-    <!-- Rules screen -->
+    <!-- Rules screen (first login) -->
     <div id="mode-rules" class="card hidden">
-      <h2>Annotation Rules</h2>
-      <div style="margin:16px 0; line-height:1.6;">
-        <p><strong>Your task:</strong> Listen to each audio segment and decide whether overlapping speech is present.</p>
-        <br>
-        <p><strong>Option 1 — No useful overlap:</strong> The segment has no meaningful overlap between speakers.</p>
-        <br>
-        <p><strong>Option 2 — Overlap exists, not localizable:</strong> You hear overlap, but you cannot reliably determine where it starts and ends.</p>
-        <br>
-        <p><strong>Option 3 — Overlap exists, localizable:</strong> You hear overlap and you can mark the time spans where it occurs. For each span, indicate how intelligible the overlapping speech is and optionally transcribe what you hear.</p>
-        <br>
-        <p>After reading these rules, click the button below to begin the tutorial.</p>
-      </div>
-      <button class="btn btn-primary" onclick="acknowledgeRules()">I've Read the Rules — Start Tutorial</button>
+      <div id="rules-content-inline" style="margin:16px 0; line-height:1.7;">Nahrávám pravidla…</div>
+      <button class="btn btn-primary" onclick="acknowledgeRules()">Přečetl/a jsem pravidla — Pokračovat</button>
     </div>
 
     <!-- Annotation screen (shared by tutorial/calibration/production) -->
@@ -516,6 +564,17 @@ audio {
       <p class="text-muted mb-4">Here are your answers compared to the correct ones:</p>
       <div id="calibration-results-list"></div>
       <button class="btn btn-primary mt-4" onclick="loadTask()">Continue to Production</button>
+    </div>
+  </div>
+
+  <!-- Rules modal (can be opened anytime) -->
+  <div id="rules-modal" class="modal-overlay hidden" onclick="closeRulesModalOutside(event)">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Pravidla anotace</h2>
+        <button class="modal-close" onclick="closeRulesModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="rules-modal-body">Nahrávám…</div>
     </div>
   </div>
 
@@ -678,6 +737,7 @@ async function loadTask() {
 
     if (data.mode === 'rules') {
       document.getElementById('mode-rules').classList.remove('hidden');
+      loadRulesInline();
     } else if (data.mode === 'production' && !data.sample) {
       document.getElementById('mode-empty').classList.remove('hidden');
     } else {
@@ -1042,6 +1102,83 @@ function showCalibrationResults(results) {
 async function acknowledgeRules() {
   await api('/api/rules/acknowledge', { method: 'POST' });
   loadTask();
+}
+
+// ---- Rules markdown ----
+let rulesHtmlCache = null;
+
+async function fetchRulesHtml() {
+  if (rulesHtmlCache) return rulesHtmlCache;
+  try {
+    const data = await api('/api/rules');
+    rulesHtmlCache = markdownToHtml(data.content);
+  } catch {
+    rulesHtmlCache = '<p>Pravidla se nepodařilo načíst.</p>';
+  }
+  return rulesHtmlCache;
+}
+
+function markdownToHtml(md) {
+  let html = '';
+  const lines = md.split('\n');
+  let inUl = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+
+    const hMatch = line.match(/^(#{1,3})\s+(.+)$/);
+    if (hMatch) {
+      if (inUl) { html += '</ul>'; inUl = false; }
+      const lvl = hMatch[1].length;
+      html += `<h${lvl}>${inlineFormat(hMatch[2])}</h${lvl}>`;
+      continue;
+    }
+
+    if (line.match(/^[-*]\s+/)) {
+      if (!inUl) { html += '<ul>'; inUl = true; }
+      html += `<li>${inlineFormat(line.replace(/^[-*]\s+/, ''))}</li>`;
+      continue;
+    }
+
+    if (inUl) {
+      html += '</ul>';
+      inUl = false;
+    }
+
+    if (line.trim() === '') continue;
+
+    html += `<p>${inlineFormat(line)}</p>`;
+  }
+
+  if (inUl) html += '</ul>';
+  return html;
+}
+
+function inlineFormat(text) {
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/`(.+?)`/g, '<code>$1</code>');
+  return text;
+}
+
+async function loadRulesInline() {
+  const html = await fetchRulesHtml();
+  document.getElementById('rules-content-inline').innerHTML = html;
+}
+
+async function openRulesModal() {
+  const html = await fetchRulesHtml();
+  document.getElementById('rules-modal-body').innerHTML = html;
+  document.getElementById('rules-modal').classList.remove('hidden');
+}
+
+function closeRulesModal() {
+  document.getElementById('rules-modal').classList.add('hidden');
+}
+
+function closeRulesModalOutside(e) {
+  if (e.target === document.getElementById('rules-modal')) {
+    closeRulesModal();
+  }
 }
 
 // ---- Admin ----
