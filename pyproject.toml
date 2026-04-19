@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audio_annotations"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "tqdm",
+    "numpy>=1.24",          # ensures a modern wheel on py3.10
+    "pandas",
+    "pyarrow",
+    "jiwer",
+    "flask>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "matplotlib",
+    "jupyter>=1.0.0",
+    "ipython>=8.0.0",
+    "notebook>=7.0.0",
+    "ipykernel>=6.0.0",
+    "ipywidgets"
+]
+
+
