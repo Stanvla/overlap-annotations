@@ -11,14 +11,14 @@ set -euo pipefail
 # Environment variables (optional):
 #   PORT          — port to listen on (default: 5000)
 #   HOST          — bind address (default: 0.0.0.0)
-#   WORKERS       — gunicorn worker count (default: 2)
+#   WORKERS       — gunicorn worker count (default: 1)
 #   SECRET_KEY    — Flask session secret (auto-generated if not set)
 #   EXPORT_DIR    — directory for auto-exported annotation files
 # ============================================================
 
 PORT="${PORT:-5000}"
 HOST="${HOST:-0.0.0.0}"
-WORKERS="${WORKERS:-2}"
+WORKERS="${WORKERS:-1}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== Overlap Annotation App Deployment ==="
@@ -32,6 +32,11 @@ fi
 
 PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 echo "Python version: $PY_VERSION"
+
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+    echo "ERROR: Python 3.10+ is required."
+    exit 1
+fi
 
 # 2. Create venv if needed
 VENV_DIR="$SCRIPT_DIR/.venv"

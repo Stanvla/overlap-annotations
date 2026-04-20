@@ -4,13 +4,34 @@
 #   crontab -e
 #   0 */6 * * * /path/to/overlap-annotations/backup.sh
 #
+# Optional environment variables:
+#   ANNOTATION_DB — database path (default: ./annotations.db relative to this script)
+#   BACKUP_DIR    — backup directory (default: ./backups relative to this script)
+#
 # Keeps the last 10 backups.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DB_FILE="$SCRIPT_DIR/annotations.db"
-BACKUP_DIR="$SCRIPT_DIR/backups"
+RAW_DB_FILE="${ANNOTATION_DB:-annotations.db}"
+RAW_BACKUP_DIR="${BACKUP_DIR:-backups}"
 MAX_BACKUPS=10
+
+if [[ "$RAW_DB_FILE" = /* ]]; then
+    DB_FILE="$RAW_DB_FILE"
+else
+    DB_FILE="$SCRIPT_DIR/$RAW_DB_FILE"
+fi
+
+if [[ "$RAW_BACKUP_DIR" = /* ]]; then
+    BACKUP_DIR="$RAW_BACKUP_DIR"
+else
+    BACKUP_DIR="$SCRIPT_DIR/$RAW_BACKUP_DIR"
+fi
+
+if ! command -v sqlite3 &>/dev/null; then
+    echo "sqlite3 command not found. Install sqlite3 to use backup.sh."
+    exit 1
+fi
 
 if [ ! -f "$DB_FILE" ]; then
     echo "No database file found at $DB_FILE"

@@ -151,3 +151,23 @@ Chronological log of all changes made to the application.
   - **Database** (4 tests): table creation, `init_db` idempotency, WAL mode, foreign keys enabled
 - Each test uses a fresh temporary SQLite database via `monkeypatch` + `tmp_path`
 - `auto_export` monkeypatched in production tests to avoid file I/O and git calls
+
+### Additional edge-case test coverage
+- Expanded `tests/test_app.py` from 63 to 72 tests to cover previously missing edge cases
+- Added tests for `/api/rules` content and missing-file behavior
+- Added tests for `/audio/<path>` serving and path sanitization
+- Added deterministic queue-selection tests for normalized weights and skipping samples already annotated by the same user
+- Added export-content tests that validate actual JSON/TSV row contents, not just response status and content type
+- Added a duplicate-race regression test against the database `UNIQUE(sample_id, user_id)` constraint
+
+### Duplicate submit race handling
+- Added `_insert_annotation()` helper in `webapp/app.py` to handle insert-time duplicate races cleanly
+- Tutorial, calibration, and production submit paths now convert `sqlite3.IntegrityError` from duplicate annotation inserts into the expected duplicate response instead of failing with a server error
+
+### Deployment and backup hardening
+- Updated `deploy.sh` to enforce Python 3.10+ instead of only printing the interpreter version
+- Changed default Gunicorn worker count from 2 to 1 to better match SQLite/WAL deployment on a small server
+- Updated `backup.sh` to support `ANNOTATION_DB` and `BACKUP_DIR` environment variables
+- Added explicit `sqlite3` availability check to `backup.sh`
+- Updated `deployment.md` with safer WAL-mode restore instructions, including stopping the service and removing `annotations.db-wal` / `annotations.db-shm`
+- Updated `deployment.md` with file ownership/write-permission requirements for the service user and more explicit systemd environment configuration

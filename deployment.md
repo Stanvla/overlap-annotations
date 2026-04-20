@@ -56,7 +56,7 @@ This will:
 |-----------------|------------------------|------------------------------------------|
 | `PORT`          | `5000`                 | Server port                              |
 | `HOST`          | `0.0.0.0`              | Bind address                             |
-| `WORKERS`       | `2`                    | Gunicorn worker processes                |
+| `WORKERS`       | `1`                    | Gunicorn worker processes                |
 | `SECRET_KEY`    | Auto-generated         | Flask session signing key                |
 | `ANNOTATION_DB` | `./annotations.db`     | Path to SQLite database file             |
 | `EXPORT_DIR`    | Project root           | Where auto-exported TSV/JSON are written |
@@ -82,12 +82,14 @@ User=www-data
 WorkingDirectory=/opt/overlap-annotations
 ExecStart=/opt/overlap-annotations/.venv/bin/gunicorn \
     --bind 0.0.0.0:5000 \
-    --workers 2 \
+    --workers 1 \
     --access-logfile - \
     --error-logfile - \
     --timeout 120 \
     webapp.app:app
 Environment=SECRET_KEY=<your-secret-key>
+Environment=ANNOTATION_DB=/opt/overlap-annotations/annotations.db
+Environment=EXPORT_DIR=/opt/overlap-annotations
 Restart=on-failure
 RestartSec=5
 
@@ -109,6 +111,27 @@ View logs:
 ```bash
 journalctl -u overlap-annotations -f
 ```
+
+### File ownership and write permissions
+
+If you keep `User=www-data`, that user must be able to write:
+
+- `annotations.db`
+- `annotations.db-wal`
+- `annotations.db-shm`
+- `annotations_export.tsv`
+- `annotations_export.json`
+- `backups/`
+- `.secret_key`
+
+Example:
+
+```bash
+sudo chown -R www-data:www-data /opt/overlap-annotations
+sudo chmod 600 /opt/overlap-annotations/.secret_key
+```
+
+If you use a different service user, adjust ownership accordingly.
 
 ## 5. Set up a reverse proxy (optional, for HTTPS)
 
@@ -161,6 +184,12 @@ Add:
 0 */6 * * * /opt/overlap-annotations/backup.sh >> /opt/overlap-annotations/backups/backup.log 2>&1
 ```
 
+If you changed the database location, pass it explicitly in cron:
+
+```
+0 */6 * * * ANNOTATION_DB=/opt/overlap-annotations/annotations.db BACKUP_DIR=/opt/overlap-annotations/backups /opt/overlap-annotations/backup.sh >> /opt/overlap-annotations/backups/backup.log 2>&1
+```
+
 Backups are stored in `backups/` as `annotations_YYYYMMDD_HHMMSS.db`.
 
 ## 7. Auto-exported annotation files
@@ -210,6 +239,11 @@ Make sure `SECRET_KEY` is the same as before. The deployment script persists it 
 
 **Restoring from backup:**
 ```bash
+sudo systemctl stop overlap-annotations
 cp backups/annotations_YYYYMMDD_HHMMSS.db annotations.db
+rm -f annotations.db-wal annotations.db-shm
+sudo chown www-data:www-data annotations.db
 sudo systemctl restart overlap-annotations
 ```
+
+If your service runs as a user other than `www-data`, replace the `chown` target accordingly.
