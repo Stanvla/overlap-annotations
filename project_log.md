@@ -106,6 +106,12 @@ Chronological log of all changes made to the application.
 - Created `deployment.md` — step-by-step deployment guide (server setup, systemd, nginx, HTTPS, backups)
 - Created `technical_documentation_extension.md` — all features beyond the original spec
 
+### Calibration analytics notebook
+- Created `notebooks/calibration_success_rate.ipynb` for quick calibration-quality analysis from the SQLite database
+- Notebook loads accepted calibration annotations, joins them with calibration samples and golden annotations, and computes per-user success metrics
+- Added two visual success-rate views: coarse label success (`negative` vs `positive`) and exact UI choice success (`negative`, `positive_not_localizable`, `positive_localizable`)
+- Added a mismatch table to inspect which calibration items each annotator answered incorrectly
+
 ### Production annotation counter
 - Added `production_annotation_count` to user data (counts only accepted production annotations)
 - Displayed next to user's name in header as "(X annotated)", updates live after each submission
