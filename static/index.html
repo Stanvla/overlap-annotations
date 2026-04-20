@@ -620,7 +620,11 @@ audio {
   <div id="screen-admin" class="hidden">
     <div class="header">
       <h1>Admin Panel</h1>
-      <button class="btn btn-sm btn-outline" onclick="hideAdmin()">Back to Annotation</button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-sm btn-outline" onclick="exportAnnotations('tsv')">⤓ Export TSV</button>
+        <button class="btn btn-sm btn-outline" onclick="exportAnnotations('json')">⤓ Export JSON</button>
+        <button class="btn btn-sm btn-outline" onclick="hideAdmin()">Back to Annotation</button>
+      </div>
     </div>
     <div class="admin-tabs">
       <button class="admin-tab active" onclick="adminTab('users', this)">Users</button>
@@ -1352,6 +1356,10 @@ function hideAdmin() {
   document.getElementById('screen-admin').classList.add('hidden');
   document.getElementById('screen-main').classList.remove('hidden');
   loadTask();
+}
+
+function exportAnnotations(fmt) {
+  window.open(`/api/admin/export?format=${fmt}`, '_blank');
 }
 
 function adminTab(tab, btn) {

@@ -1,8 +1,10 @@
 import json
 import random
 import secrets
+import csv
+import io
 
-from flask import Flask, request, jsonify, session, send_from_directory, send_file
+from flask import Flask, request, jsonify, session, send_from_directory, send_file, Response
 from functools import wraps
 import os
 
@@ -833,6 +835,88 @@ def admin_pick_for_onboarding():
     db.commit()
     db.close()
     return jsonify({"created": created, "count": len(created)})
+
+
+@app.route("/api/admin/export")
+@admin_required
+def admin_export():
+    """Export all annotations as TSV or JSON."""
+    fmt = request.args.get("format", "tsv")
+    sample_type = request.args.get("sample_type")  # optional filter
+
+    db = get_db()
+    query = """
+        SELECT a.id as annotation_id, a.sample_id, a.user_id, a.label, a.annotation_data,
+               a.status, a.created_at,
+               s.sample_type, s.audio_path, s.recognized_text, s.is_closed,
+               s.accepted_annotation_count, s.queue_type,
+               u.display_name
+        FROM annotations a
+        JOIN samples s ON a.sample_id = s.id
+        JOIN users u ON a.user_id = u.id
+    """
+    params = []
+    if sample_type:
+        query += " WHERE s.sample_type = ?"
+        params.append(sample_type)
+    query += " ORDER BY s.id, a.created_at"
+
+    rows = db.execute(query, params).fetchall()
+    db.close()
+
+    if fmt == "json":
+        result = []
+        for r in rows:
+            ad = json.loads(r["annotation_data"])
+            result.append({
+                "annotation_id": r["annotation_id"],
+                "sample_id": r["sample_id"],
+                "sample_type": r["sample_type"],
+                "audio_path": r["audio_path"],
+                "recognized_text": r["recognized_text"],
+                "user_id": r["user_id"],
+                "display_name": r["display_name"],
+                "label": r["label"],
+                "ui_choice": ad.get("ui_choice"),
+                "spans": ad.get("spans", []),
+                "status": r["status"],
+                "is_closed": bool(r["is_closed"]),
+                "accepted_annotation_count": r["accepted_annotation_count"],
+                "queue_type": r["queue_type"],
+                "created_at": r["created_at"],
+            })
+        return Response(
+            json.dumps(result, ensure_ascii=False, indent=2),
+            mimetype="application/json",
+            headers={"Content-Disposition": "attachment; filename=annotations_export.json"}
+        )
+
+    # Default: TSV
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter="\t")
+    writer.writerow([
+        "annotation_id", "sample_id", "sample_type", "audio_path", "recognized_text",
+        "user_id", "display_name", "label", "ui_choice",
+        "span_count", "spans_json", "status",
+        "is_closed", "accepted_annotation_count", "queue_type", "created_at"
+    ])
+    for r in rows:
+        ad = json.loads(r["annotation_data"])
+        spans = ad.get("spans", [])
+        writer.writerow([
+            r["annotation_id"], r["sample_id"], r["sample_type"], r["audio_path"],
+            r["recognized_text"] or "",
+            r["user_id"], r["display_name"], r["label"], ad.get("ui_choice", ""),
+            len(spans), json.dumps(spans, ensure_ascii=False) if spans else "",
+            r["status"], r["is_closed"], r["accepted_annotation_count"],
+            r["queue_type"] or "", r["created_at"]
+        ])
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/tab-separated-values",
+        headers={"Content-Disposition": "attachment; filename=annotations_export.tsv"}
+    )
 
 
 # ---------------------------------------------------------------------------
