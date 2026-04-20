@@ -17,8 +17,6 @@ app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 AUDIO_DIR = os.path.join(os.path.dirname(__file__), "..", "selected_audios")
 EXPORT_DIR = os.environ.get("EXPORT_DIR", os.path.join(os.path.dirname(__file__), ".."))
 
-TUTORIAL_COUNT = 5
-CALIBRATION_COUNT = 5
 NEGATIVE_REQUEUE_PROB = 0.1
 
 QUEUE_WEIGHTS = {
@@ -55,8 +53,8 @@ def admin_required(f):
     return decorated
 
 
-def _user_dict(row):
-    return {
+def _user_dict(row, db=None):
+    d = {
         "id": row["id"],
         "display_name": row["display_name"],
         "stage": row["stage"],
@@ -66,6 +64,15 @@ def _user_dict(row):
         "is_admin": bool(row["is_admin"]),
         "onboarding_completed_at": row["onboarding_completed_at"],
     }
+    if db:
+        count = db.execute(
+            """SELECT COUNT(*) as c FROM annotations a
+               JOIN samples s ON a.sample_id = s.id
+               WHERE a.user_id = ? AND s.sample_type = 'production' AND a.status = 'accepted'""",
+            (row["id"],)
+        ).fetchone()["c"]
+        d["production_annotation_count"] = count
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -81,13 +88,15 @@ def login():
 
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE login_code = ?", (code,)).fetchone()
-    db.close()
 
     if not user:
+        db.close()
         return jsonify({"error": "Invalid login code"}), 401
 
     session["user_id"] = user["id"]
-    return jsonify({"user": _user_dict(user)})
+    result = _user_dict(user, db)
+    db.close()
+    return jsonify({"user": result})
 
 
 @app.route("/api/logout", methods=["POST"])
@@ -101,11 +110,13 @@ def logout():
 def me():
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
-    db.close()
     if not user:
+        db.close()
         session.clear()
         return jsonify({"error": "User not found"}), 401
-    return jsonify({"user": _user_dict(user)})
+    result = _user_dict(user, db)
+    db.close()
+    return jsonify({"user": result})
 
 
 # ---------------------------------------------------------------------------
@@ -210,11 +221,12 @@ def get_current_task():
             user = db.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
             # Fall through to calibration
         else:
+            total = db.execute("SELECT COUNT(*) as c FROM samples WHERE sample_type = 'tutorial'").fetchone()["c"]
             db.close()
             return jsonify({
                 "mode": "tutorial",
                 "index": user["tutorial_index"],
-                "total": TUTORIAL_COUNT,
+                "total": total,
                 "sample": _sample_dict(sample),
             })
 
@@ -230,11 +242,12 @@ def get_current_task():
             db.commit()
             user = db.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
         else:
+            total = db.execute("SELECT COUNT(*) as c FROM samples WHERE sample_type = 'calibration'").fetchone()["c"]
             db.close()
             return jsonify({
                 "mode": "calibration",
                 "index": user["calibration_index"],
-                "total": CALIBRATION_COUNT,
+                "total": total,
                 "sample": _sample_dict(sample),
             })
 
@@ -554,11 +567,12 @@ def serve_audio(filename):
 def admin_list_users():
     db = get_db()
     users = db.execute("SELECT * FROM users ORDER BY id").fetchall()
-    db.close()
-    return jsonify({"users": [
-        {**_user_dict(u), "login_code": u["login_code"], "created_at": u["created_at"]}
+    result = [
+        {**_user_dict(u, db), "login_code": u["login_code"], "created_at": u["created_at"]}
         for u in users
-    ]})
+    ]
+    db.close()
+    return jsonify({"users": result})
 
 
 @app.route("/api/admin/users", methods=["POST"])

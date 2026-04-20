@@ -488,6 +488,7 @@ audio {
       </div>
       <div class="user-info">
         <span id="user-name"></span>
+        <span id="user-anno-count" class="text-sm text-muted" style="margin-left:6px;"></span>
         <button class="btn btn-sm btn-outline" onclick="openRulesModal()" title="Pravidla anotace" style="margin-left:8px;">ℹ️ Pravidla</button>
         <button class="btn btn-sm btn-outline" onclick="doLogout()" style="margin-left:4px;">Logout</button>
         <button id="admin-btn" class="btn btn-sm btn-outline hidden" onclick="showAdmin()" style="margin-left:4px;">Admin</button>
@@ -745,6 +746,8 @@ function showMain() {
   document.getElementById('screen-admin').classList.add('hidden');
   document.getElementById('screen-main').classList.remove('hidden');
   document.getElementById('user-name').textContent = currentUser.display_name;
+  const count = currentUser.production_annotation_count || 0;
+  document.getElementById('user-anno-count').textContent = `(${count} annotated)`;
 
   if (currentUser.is_admin) {
     document.getElementById('admin-btn').classList.remove('hidden');
@@ -1080,6 +1083,10 @@ async function submitAnnotation() {
 
     // For production or after tutorial feedback, load next
     if (currentTask.mode !== 'tutorial') {
+      if (currentTask.mode === 'production') {
+        currentUser.production_annotation_count = (currentUser.production_annotation_count || 0) + 1;
+        document.getElementById('user-anno-count').textContent = `(${currentUser.production_annotation_count} annotated)`;
+      }
       setTimeout(loadTask, 300);
     }
   } catch (e) {
@@ -1388,7 +1395,7 @@ async function loadAdminUsers() {
   }
   el.innerHTML = `
     <table class="admin-table">
-      <thead><tr><th>ID</th><th>Name</th><th>Code</th><th>Stage</th><th>Admin</th><th>Actions</th></tr></thead>
+      <thead><tr><th>ID</th><th>Name</th><th>Code</th><th>Stage</th><th>Annotated</th><th>Admin</th><th>Actions</th></tr></thead>
       <tbody>
         ${data.users.map(u => `
           <tr>
@@ -1396,6 +1403,7 @@ async function loadAdminUsers() {
             <td>${esc(u.display_name)}</td>
             <td><code>${esc(u.login_code)}</code></td>
             <td>${u.stage}</td>
+            <td>${u.production_annotation_count || 0}</td>
             <td>${u.is_admin ? 'Yes' : ''}</td>
             <td>
               ${u.stage !== 'rules' ? `<button class="btn btn-sm btn-outline" onclick="resetUser(${u.id})">Reset</button>` : ''}

@@ -83,7 +83,7 @@ The annotation rules document (`annotatori_pravidla_overlap.md`) is served via `
 |---------|-------------|
 | Create user | Form with display name, optional login code (auto-generated via `secrets.token_hex(4)`), admin checkbox |
 | Reset user | Sends user back to rules/tutorial/calibration stage. **Automatically deletes** their tutorial and calibration annotations so they can redo onboarding without "already submitted" errors |
-| View all users | Table showing ID, name, login code, current stage, admin flag |
+| View all users | Table showing ID, name, login code, current stage, production annotation count, admin flag |
 
 ### Tutorial/Calibration Sample Management
 
@@ -193,6 +193,7 @@ See [deployment.md](deployment.md) for full deployment instructions.
 | Submit button state | Disabled until a choice is selected; disabled during submission to prevent double-submit |
 | Session persistence | Page load checks for existing session and auto-restores the user's state |
 | Admin visibility | Admin button shown only for admin users |
+| Production annotation counter | Displayed next to the user's name as "(X annotated)". Counts only accepted production annotations (excludes tutorial/calibration). Updates live after each submission. Also shown in the admin user table as an "Annotated" column |
 
 ---
 
