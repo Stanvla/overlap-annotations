@@ -1373,6 +1373,7 @@ function adminTab(tab, btn) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   ['admin-users', 'admin-samples', 'admin-production'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  if (typeof destroyQueueWaveforms === 'function') destroyQueueWaveforms();
 
   if (tab === 'users') {
     document.getElementById('admin-users').classList.remove('hidden');
@@ -1690,7 +1691,15 @@ async function saveGoldenAnnotation() {
   loadAdminSamples();
 }
 
+let queueWaveforms = [];
+
+function destroyQueueWaveforms() {
+  queueWaveforms.forEach(ws => { try { ws.destroy(); } catch(e) {} });
+  queueWaveforms = [];
+}
+
 async function loadAdminProduction() {
+  destroyQueueWaveforms();
   const data = await api('/api/admin/queues');
   const c = data.counts;
   const statsEl = document.getElementById('admin-queue-stats');
@@ -1725,6 +1734,7 @@ async function loadAdminProduction() {
 }
 
 async function loadQueueSamples(queue) {
+  destroyQueueWaveforms();
   const data = await api(`/api/admin/queues?queue=${queue}`);
   const el = document.getElementById('admin-production-list');
 
@@ -1734,10 +1744,18 @@ async function loadQueueSamples(queue) {
   }
 
   const label = queue.charAt(0).toUpperCase() + queue.slice(1);
+  const regionColors = [
+    'rgba(37, 99, 235, 0.25)',   // blue
+    'rgba(239, 68, 68, 0.25)',   // red
+    'rgba(34, 197, 94, 0.25)',   // green
+    'rgba(249, 115, 22, 0.25)',  // orange
+    'rgba(139, 92, 246, 0.25)',  // purple
+  ];
+
   el.innerHTML = `
     <h4 class="mt-2 mb-2">${label} Queue — ${data.samples.length} sample${data.samples.length > 1 ? 's' : ''}</h4>
-    ${data.samples.map(s => `
-      <div class="card" style="padding:12px; margin-bottom:8px;">
+    ${data.samples.map((s, si) => `
+      <div class="card" style="padding:12px; margin-bottom:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <strong>#${s.id}</strong>
           <span class="text-sm text-muted">
@@ -1745,27 +1763,33 @@ async function loadQueueSamples(queue) {
           </span>
         </div>
         ${s.recognized_text ? `<p class="text-sm mt-2" style="color:#64748b;">${esc(s.recognized_text)}</p>` : ''}
-        <audio controls src="${s.audio_url}" style="width:100%; margin:8px 0;"></audio>
+        <div id="queue-waveform-${si}" class="cal-waveform"></div>
         ${s.annotations.length ? `
           <div class="mt-2" style="border-top:1px solid #e2e8f0; padding-top:8px;">
             <strong class="text-sm">Annotations (${s.annotations.length}):</strong>
-            ${s.annotations.map(a => {
+            ${s.annotations.map((a, ai) => {
               const ad = a.annotation_data;
               const spans = ad.spans || [];
+              const color = regionColors[ai % regionColors.length].replace('0.25', '1').replace('rgba', '').replace(')', '').split(',').slice(0,3).join(',');
               return `
-                <div style="margin:6px 0 6px 8px; padding:6px; background:#f8fafc; border-radius:4px;">
+                <div style="margin:6px 0 6px 8px; padding:8px; background:#f8fafc; border-radius:4px; border-left:3px solid rgba(${color}, 0.7);">
                   <div class="text-sm">
                     <strong>${esc(a.display_name)}</strong> (user #${a.user_id})
                     — <strong>${a.label}</strong> (${choiceLabel(ad.ui_choice)})
                     <span class="text-muted" style="margin-left:8px;">${a.created_at}</span>
                   </div>
-                  ${spans.length ? spans.map((sp, si) => {
-                    const txt = sp.text || sp.transcribed_text || '';
-                    return `<div class="text-sm" style="margin-left:12px; margin-top:2px; color:#475569;">
-                      Span ${si + 1}: ${Number(sp.start).toFixed(2)}s–${Number(sp.end).toFixed(2)}s
-                      | intell: ${sp.intelligibility || '?'}${txt ? ' | "' + esc(txt) + '"' : ''}
-                    </div>`;
-                  }).join('') : ''}
+                  ${spans.length ? `
+                    <div style="margin-top:4px;">
+                      ${spans.map((sp, spi) => {
+                        const txt = sp.text || sp.transcribed_text || '';
+                        return `<div class="text-sm" style="margin-left:8px; margin-top:2px; color:#475569;">
+                          Span ${spi + 1}: ${Number(sp.start).toFixed(2)}s\u2013${Number(sp.end).toFixed(2)}s
+                          | intell: ${sp.intelligibility || '?'}${txt ? ' | \u201c' + esc(txt) + '\u201d' : ''}
+                        </div>`;
+                      }).join('')}
+                    </div>
+                    <div id="queue-span-btns-${si}-${ai}" class="mt-2" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+                  ` : ''}
                 </div>
               `;
             }).join('')}
@@ -1774,6 +1798,67 @@ async function loadQueueSamples(queue) {
       </div>
     `).join('')}
   `;
+
+  // Init waveforms with annotation span regions
+  data.samples.forEach((s, si) => {
+    const regions = WaveSurfer.Regions.create();
+    const ws = WaveSurfer.create({
+      container: `#queue-waveform-${si}`,
+      waveColor: '#94a3b8',
+      progressColor: '#2563eb',
+      cursorColor: '#1e293b',
+      cursorWidth: 1,
+      height: 80,
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 2,
+      normalize: true,
+      interact: true,
+      plugins: [regions],
+    });
+    queueWaveforms.push(ws);
+    ws.load(s.audio_url);
+
+    ws.on('ready', () => {
+      s.annotations.forEach((a, ai) => {
+        const ad = a.annotation_data;
+        const spans = ad.spans || [];
+        const color = regionColors[ai % regionColors.length];
+        const btnContainer = document.getElementById(`queue-span-btns-${si}-${ai}`);
+
+        spans.forEach((sp, spi) => {
+          const txt = sp.text || sp.transcribed_text || '';
+          const spanLabel = `${a.display_name} #${spi + 1}` + (txt ? ': ' + txt : '');
+          regions.addRegion({
+            start: sp.start,
+            end: sp.end,
+            color: color,
+            drag: false,
+            resize: false,
+            content: spanLabel,
+          });
+
+          if (btnContainer) {
+            const btn = document.createElement('button');
+            btn.className = 'play-span-btn';
+            btn.textContent = `\u25b6 Span ${spi + 1} (${Number(sp.start).toFixed(1)}s\u2013${Number(sp.end).toFixed(1)}s)`;
+            btn.onclick = () => {
+              ws.setTime(sp.start);
+              ws.play();
+              const onProcess = (time) => {
+                if (time >= sp.end) {
+                  ws.pause();
+                  ws.un('audioprocess', onProcess);
+                }
+              };
+              ws.on('audioprocess', onProcess);
+            };
+            btnContainer.appendChild(btn);
+          }
+        });
+      });
+    });
+  });
 }
 
 async function viewAnnotations(sampleId) {

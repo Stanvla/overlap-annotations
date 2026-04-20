@@ -124,3 +124,11 @@ Chronological log of all changes made to the application.
 - Color-coded cards: unseen (amber), positive (green), negative (gray), conflict (red), closed (indigo)
 - Clicking a queue drills down to show all samples with inline annotation details per sample
 - Each annotation shows: annotator name, user ID, coarse label, detailed UI choice, span details (times, intelligibility, text), timestamp
+
+### Interactive waveforms in admin queue drill-down
+- Replaced plain `<audio>` tags with WaveSurfer.js waveform instances per sample in the queue drill-down view
+- Annotation spans rendered as colored regions on the waveform — each annotator gets a distinct color (blue, red, green, orange, purple)
+- Region labels show annotator name, span number, and transcript text
+- Play buttons per span with auto-stop at span end
+- Annotation cards have color-coded left borders matching their region color on the waveform
+- Waveform instances tracked and properly cleaned up on tab switch or reload
