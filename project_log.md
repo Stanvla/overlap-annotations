@@ -86,9 +86,9 @@ Chronological log of all changes made to the application.
 - Writes `annotations_export.tsv` and `annotations_export.json` to project root (configurable via `EXPORT_DIR`)
 - Best-effort: failures don't break annotation flow
 
-### Git auto-commit of exports
-- After writing export files, auto-runs `git add` + `git commit` with message "auto: update annotation exports"
-- Silently skipped if git not available or no changes
+### Git auto-commit of exports (historical, later removed on 2026-04-21)
+- At this point the app auto-ran `git add` + `git commit` with message "auto: update annotation exports"
+- This behavior was later removed so export stays file-only
 
 ### Backup script (`backup.sh`)
 - Safe SQLite backup using `.backup` command (handles WAL correctly)
@@ -182,3 +182,13 @@ Chronological log of all changes made to the application.
 - Updated `webapp/import_data.py` to normalize imported audio paths into relative `selected_audios/...` form so both old absolute-path TSVs and the new relative TSV format import cleanly
 - Updated `webapp/app.py` to generate audio URLs from relative paths, preserve nested subpaths, and resolve audio serving from the `selected_audios/` tree instead of assuming flat basename-only paths
 - Added regression tests for relative audio URLs, nested audio serving, and relative-path normalization during TSV import
+
+---
+
+## 2026-04-21 — Export Behavior Simplification
+
+### Disabled git auto-commit for exports
+- Removed the `git add` / `git commit` side effect from `auto_export()` in `webapp/app.py`
+- Automatic export still writes `annotations_export.tsv` and `annotations_export.json` after each accepted production annotation
+- Added a regression test to verify `auto_export()` still writes both files without shelling out to subprocesses
+- Updated deployment and technical documentation to describe export-only behavior

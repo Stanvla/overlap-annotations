@@ -13,7 +13,7 @@ import pytest
 _tmpdir = tempfile.mkdtemp()
 os.environ["ANNOTATION_DB"] = os.path.join(_tmpdir, "test.db")
 
-from webapp.app import app
+from webapp.app import app, auto_export
 from webapp.db import get_db, init_db
 from webapp.import_data import import_production_samples
 
@@ -361,7 +361,7 @@ class TestProductionSubmit:
         assert data["sample"]["id"] == sids[0]
 
     def test_production_submit_accepted(self, client, monkeypatch):
-        # Patch auto_export to avoid file writes and git calls
+        # Patch auto_export to avoid file writes during queue-state tests.
         monkeypatch.setattr("webapp.app.auto_export", lambda: None)
         uid, sids = self._setup_production(client)
         # Get task to assign sample
@@ -920,6 +920,50 @@ class TestAdmin:
 # ---------------------------------------------------------------------------
 
 class TestExport:
+    def test_auto_export_writes_files_without_shelling_out(self, monkeypatch, tmp_path):
+        uid = _create_user("ann", "Annotator", stage="production")
+        prod_sid = _create_sample(
+            "production",
+            audio_path="prod.wav",
+            recognized_text="prod text",
+            queue_type="positive",
+        )
+
+        db = get_db()
+        db.execute("UPDATE samples SET accepted_annotation_count = 1, queue_type = 'positive' WHERE id = ?", (prod_sid,))
+        db.execute(
+            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, 'positive', ?, 'accepted')",
+            (prod_sid, uid, json.dumps(_annotation_data("positive_localizable", [{"start": 0.1, "end": 0.5}]))),
+        )
+        db.commit()
+        db.close()
+
+        subprocess_calls = []
+
+        def record_subprocess(*args, **kwargs):
+            subprocess_calls.append((args, kwargs))
+
+        monkeypatch.setattr("webapp.app.EXPORT_DIR", str(tmp_path))
+        monkeypatch.setattr("subprocess.run", record_subprocess)
+
+        auto_export()
+
+        tsv_path = tmp_path / "annotations_export.tsv"
+        json_path = tmp_path / "annotations_export.json"
+
+        assert tsv_path.exists()
+        assert json_path.exists()
+        assert subprocess_calls == []
+
+        rows = list(csv.DictReader(io.StringIO(tsv_path.read_text(encoding="utf-8")), delimiter="\t"))
+        assert len(rows) == 1
+        assert rows[0]["sample_id"] == str(prod_sid)
+
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        assert len(data) == 1
+        assert data[0]["sample_id"] == prod_sid
+        assert data[0]["ui_choice"] == "positive_localizable"
+
     def test_admin_export_tsv(self, client):
         _create_user("admin1", "Admin", is_admin=True, stage="production")
         _login(client, "admin1")

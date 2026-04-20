@@ -246,7 +246,7 @@ After every production annotation, the app automatically writes:
 - `annotations_export.tsv` — tab-separated, all production annotations
 - `annotations_export.json` — structured JSON with full span data
 
-These are also auto-committed to git (if a git repo is present). You can additionally download them anytime from the admin panel using the **⇓ Export TSV** / **⇓ Export JSON** buttons.
+These files are updated automatically on disk. You can additionally download them anytime from the admin panel using the **⇓ Export TSV** / **⇓ Export JSON** buttons.
 
 ---
 

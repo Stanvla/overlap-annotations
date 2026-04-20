@@ -144,17 +144,7 @@ After every accepted production annotation, the app automatically writes:
 - **`annotations_export.json`** — structured JSON array with spans fully expanded
 
 Export is best-effort and will not break the annotation flow if it fails.
-
-### Git Auto-Commit
-
-After writing export files, the app runs:
-
-```
-git add annotations_export.tsv annotations_export.json
-git commit -m "auto: update annotation exports" --no-verify
-```
-
-This creates a version history of annotation progress. Silently skipped if git is not available.
+The app only refreshes these export files on disk; it does not run git commands or create commits.
 
 ### Admin Manual Export
 
