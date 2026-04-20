@@ -1081,6 +1081,17 @@ async function submitAnnotation() {
   }
 }
 
+function renderSpanDetails(annotation) {
+  if (!annotation || !annotation.spans || annotation.spans.length === 0) return '';
+  return annotation.spans.map((sp, i) => {
+    const start = sp.start != null ? Number(sp.start).toFixed(2) : '?';
+    const end = sp.end != null ? Number(sp.end).toFixed(2) : '?';
+    const intell = sp.intelligibility || '?';
+    const txt = sp.text || sp.transcribed_text || '';
+    return `<div style="margin-left:8px; margin-top:2px; color:#334155;">Span ${i + 1}: ${start}s–${end}s | intelligibility: ${intell}${txt ? ' | "' + esc(txt) + '"' : ''}</div>`;
+  }).join('');
+}
+
 function showTutorialFeedback(golden, userAnswer) {
   const area = document.getElementById('feedback-area');
   area.classList.remove('hidden');
@@ -1093,6 +1104,8 @@ function showTutorialFeedback(golden, userAnswer) {
   const userLabel = userChoice === 'negative' ? 'negative' : 'positive';
   const isCorrect = goldenLabel === userLabel;
 
+  const goldenSpansHtml = renderSpanDetails(golden);
+
   area.innerHTML = `
     <div class="feedback-box ${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}">
       <strong>${isCorrect ? '✓ Correct!' : '✗ Incorrect'}</strong>
@@ -1100,6 +1113,7 @@ function showTutorialFeedback(golden, userAnswer) {
         Your answer: <strong>${choiceLabel(userChoice)}</strong><br>
         Correct answer: <strong>${choiceLabel(goldenChoice)}</strong>
       </p>
+      ${goldenSpansHtml ? '<div class="mt-2 text-sm" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Correct spans:</strong>' + goldenSpansHtml + '</div>' : ''}
     </div>
     <button class="btn btn-primary mt-2" onclick="loadTask()">Next</button>
   `;
@@ -1121,6 +1135,7 @@ function showCalibrationResults(results) {
     const goldenLabel = r.golden ? (r.golden.ui_choice === 'negative' ? 'negative' : 'positive') : '?';
     const userLabel = r.your_answer ? (r.your_answer.ui_choice === 'negative' ? 'negative' : 'positive') : '?';
     const match = goldenLabel === userLabel;
+    const goldenSpansHtml = r.golden ? renderSpanDetails(r.golden) : '';
     return `
       <div class="calibration-result ${match ? 'match' : 'mismatch'}">
         <strong>Sample ${i + 1}</strong> — ${match ? '✓ Match' : '✗ Mismatch'}
@@ -1128,6 +1143,7 @@ function showCalibrationResults(results) {
           Your answer: <strong>${r.your_answer ? choiceLabel(r.your_answer.ui_choice) : 'N/A'}</strong><br>
           Correct: <strong>${r.golden ? choiceLabel(r.golden.ui_choice) : 'N/A'}</strong>
         </p>
+        ${goldenSpansHtml ? '<div class="text-sm mt-2" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Correct spans:</strong>' + goldenSpansHtml + '</div>' : ''}
         <audio controls src="${r.sample.audio_url}" class="mt-2" style="width:100%;"></audio>
       </div>
     `;
@@ -1374,6 +1390,17 @@ function goldenSummary(g) {
   let s = choiceLabel(g.ui_choice);
   if (g.spans && g.spans.length > 0) {
     s += ` (${g.spans.length} span${g.spans.length > 1 ? 's' : ''})`;
+    s += '<div style="margin-top:4px; font-weight:normal; font-size:0.85em;">';
+    g.spans.forEach((sp, i) => {
+      const start = sp.start != null ? sp.start.toFixed(2) : '?';
+      const end = sp.end != null ? sp.end.toFixed(2) : '?';
+      const intell = sp.intelligibility || '?';
+      const txt = sp.text || sp.transcribed_text || '';
+      s += `<div style="margin-left:8px; margin-top:2px;">Span ${i + 1}: ${start}s–${end}s | intell: ${intell}`;
+      if (txt) s += ` | "${esc(txt)}"`;
+      s += '</div>';
+    });
+    s += '</div>';
   }
   return s;
 }
