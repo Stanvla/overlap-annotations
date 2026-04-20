@@ -706,6 +706,25 @@ def admin_update_sample(sample_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/admin/samples/<int:sample_id>", methods=["DELETE"])
+@admin_required
+def admin_delete_sample(sample_id):
+    db = get_db()
+    sample = db.execute("SELECT * FROM samples WHERE id = ?", (sample_id,)).fetchone()
+    if not sample:
+        db.close()
+        return jsonify({"error": "Not found"}), 404
+    if sample["sample_type"] == "production":
+        db.close()
+        return jsonify({"error": "Cannot delete production samples"}), 400
+    # Remove any annotations for this sample
+    db.execute("DELETE FROM annotations WHERE sample_id = ?", (sample_id,))
+    db.execute("DELETE FROM samples WHERE id = ?", (sample_id,))
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/admin/samples/<int:sample_id>/annotations")
 @admin_required
 def admin_sample_annotations(sample_id):
@@ -734,7 +753,7 @@ def admin_sample_annotations(sample_id):
 @app.route("/api/admin/samples/pick-for-onboarding", methods=["POST"])
 @admin_required
 def admin_pick_for_onboarding():
-    """Pick random production samples and convert them to tutorial/calibration."""
+    """Pick production samples that already have accepted annotations and create tutorial/calibration copies with golden annotations derived from those."""
     data = request.get_json(force=True)
     target_type = data.get("sample_type")
     count = data.get("count", 5)
@@ -743,16 +762,35 @@ def admin_pick_for_onboarding():
         return jsonify({"error": "sample_type must be tutorial or calibration"}), 400
 
     db = get_db()
-    # Pick random unclosed production samples that aren't already annotated
+
+    # Pick closed production samples that have accepted annotations
+    # Prefer samples with 2 agreeing annotations (clear consensus)
     candidates = db.execute("""
-        SELECT * FROM samples
-        WHERE sample_type = 'production' AND is_closed = 0
-        ORDER BY RANDOM() LIMIT ?
+        SELECT s.*, (
+            SELECT a.annotation_data FROM annotations a
+            WHERE a.sample_id = s.id AND a.status = 'accepted'
+            ORDER BY a.created_at LIMIT 1
+        ) AS first_annotation_data,
+        (
+            SELECT a.label FROM annotations a
+            WHERE a.sample_id = s.id AND a.status = 'accepted'
+            ORDER BY a.created_at LIMIT 1
+        ) AS consensus_label
+        FROM samples s
+        WHERE s.sample_type = 'production'
+          AND s.accepted_annotation_count >= 1
+          AND s.id NOT IN (
+              SELECT s2.id FROM samples s2
+              WHERE s2.sample_type IN ('tutorial', 'calibration')
+                AND s2.audio_path = s.audio_path
+          )
+        ORDER BY s.accepted_annotation_count DESC, RANDOM()
+        LIMIT ?
     """, (count,)).fetchall()
 
     if not candidates:
         db.close()
-        return jsonify({"error": "No production samples available"}), 400
+        return jsonify({"error": "No annotated production samples available. Annotate some production samples first."}), 400
 
     existing_max_order = db.execute(
         "SELECT COALESCE(MAX(sort_order), 0) as m FROM samples WHERE sample_type = ?",
@@ -761,13 +799,25 @@ def admin_pick_for_onboarding():
 
     created = []
     for i, c in enumerate(candidates):
+        # Build golden from the first accepted annotation
+        annotation_data = json.loads(c["first_annotation_data"]) if c["first_annotation_data"] else None
+        if annotation_data:
+            golden = annotation_data  # Use the full annotation payload as golden
+        else:
+            golden = {"ui_choice": c["consensus_label"] or "negative", "spans": []}
+
         cur = db.execute(
-            """INSERT INTO samples (sample_type, audio_path, recognized_text, sort_order, queue_type, metadata_json)
-               VALUES (?, ?, ?, ?, NULL, ?)""",
+            """INSERT INTO samples (sample_type, audio_path, recognized_text, sort_order, queue_type, golden_annotation, metadata_json)
+               VALUES (?, ?, ?, ?, NULL, ?, ?)""",
             (target_type, c["audio_path"], c["recognized_text"],
-             existing_max_order + i + 1, c["metadata_json"])
+             existing_max_order + i + 1, json.dumps(golden), c["metadata_json"])
         )
-        created.append({"id": cur.lastrowid, "audio_path": c["audio_path"]})
+        created.append({
+            "id": cur.lastrowid,
+            "audio_path": c["audio_path"],
+            "golden_choice": golden.get("ui_choice"),
+            "span_count": len(golden.get("spans", [])),
+        })
 
     db.commit()
     db.close()
