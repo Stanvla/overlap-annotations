@@ -116,3 +116,11 @@ Chronological log of all changes made to the application.
 - Previously used hardcoded `TUTORIAL_COUNT = 5` / `CALIBRATION_COUNT = 5` constants
 - Now queries `SELECT COUNT(*) FROM samples WHERE sample_type = ?` for accurate totals
 - Removed unused `TUTORIAL_COUNT` and `CALIBRATION_COUNT` constants
+
+### Admin queue overview
+- Added `GET /api/admin/queues` endpoint — returns counts for all production queues (unseen, positive, negative, conflict, closed) plus total
+- Optional `?queue=` parameter returns samples in that queue with all accepted annotations (user ID, name, label, full annotation data with spans)
+- Redesigned Production tab in admin panel with clickable queue cards showing live counts
+- Color-coded cards: unseen (amber), positive (green), negative (gray), conflict (red), closed (indigo)
+- Clicking a queue drills down to show all samples with inline annotation details per sample
+- Each annotation shows: annotator name, user ID, coarse label, detailed UI choice, span details (times, intelligibility, text), timestamp

@@ -663,8 +663,8 @@ audio {
     </div>
 
     <div id="admin-production" class="card hidden">
-      <h3>Production Samples</h3>
-      <p class="text-sm text-muted mb-2">Showing recent production samples with annotations.</p>
+      <h3>Production Queues</h3>
+      <div id="admin-queue-stats" class="mb-4"></div>
       <div id="admin-production-list"></div>
     </div>
   </div>
@@ -1691,32 +1691,88 @@ async function saveGoldenAnnotation() {
 }
 
 async function loadAdminProduction() {
-  const data = await api('/api/admin/samples?sample_type=production');
+  const data = await api('/api/admin/queues');
+  const c = data.counts;
+  const statsEl = document.getElementById('admin-queue-stats');
+  const listEl = document.getElementById('admin-production-list');
+
+  statsEl.innerHTML = `
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      <div class="card" style="padding:12px; flex:1; min-width:120px; cursor:pointer; border-left:4px solid #f59e0b;" onclick="loadQueueSamples('unseen')">
+        <div class="text-sm text-muted">Unseen</div>
+        <div style="font-size:1.5em; font-weight:bold;">${c.unseen}</div>
+      </div>
+      <div class="card" style="padding:12px; flex:1; min-width:120px; cursor:pointer; border-left:4px solid #22c55e;" onclick="loadQueueSamples('positive')">
+        <div class="text-sm text-muted">Positive</div>
+        <div style="font-size:1.5em; font-weight:bold;">${c.positive}</div>
+      </div>
+      <div class="card" style="padding:12px; flex:1; min-width:120px; cursor:pointer; border-left:4px solid #94a3b8;" onclick="loadQueueSamples('negative')">
+        <div class="text-sm text-muted">Negative</div>
+        <div style="font-size:1.5em; font-weight:bold;">${c.negative}</div>
+      </div>
+      <div class="card" style="padding:12px; flex:1; min-width:120px; cursor:pointer; border-left:4px solid #ef4444;" onclick="loadQueueSamples('conflict')">
+        <div class="text-sm text-muted">Conflict</div>
+        <div style="font-size:1.5em; font-weight:bold;">${c.conflict}</div>
+      </div>
+      <div class="card" style="padding:12px; flex:1; min-width:120px; cursor:pointer; border-left:4px solid #6366f1;" onclick="loadQueueSamples('closed')">
+        <div class="text-sm text-muted">Closed</div>
+        <div style="font-size:1.5em; font-weight:bold;">${c.closed}</div>
+      </div>
+    </div>
+    <p class="text-sm text-muted mt-2">Total production samples: ${c.total}. Click a queue to view its samples.</p>
+  `;
+  listEl.innerHTML = '';
+}
+
+async function loadQueueSamples(queue) {
+  const data = await api(`/api/admin/queues?queue=${queue}`);
   const el = document.getElementById('admin-production-list');
 
   if (!data.samples.length) {
-    el.innerHTML = '<p class="text-muted">No production samples.</p>';
+    el.innerHTML = `<p class="text-muted mt-2">No samples in the ${queue} queue.</p>`;
     return;
   }
 
-  // Show first 50
-  const shown = data.samples.slice(0, 50);
+  const label = queue.charAt(0).toUpperCase() + queue.slice(1);
   el.innerHTML = `
-    <p class="text-sm text-muted mb-2">Showing ${shown.length} of ${data.samples.length} samples</p>
-    <table class="admin-table">
-      <thead><tr><th>ID</th><th>Queue</th><th>Closed</th><th>Accepted</th><th>Actions</th></tr></thead>
-      <tbody>
-        ${shown.map(s => `
-          <tr>
-            <td>${s.id}</td>
-            <td>${s.queue_type || '-'}</td>
-            <td>${s.is_closed ? 'Yes' : 'No'}</td>
-            <td>${s.accepted_annotation_count}</td>
-            <td><button class="btn btn-sm btn-outline" onclick="viewAnnotations(${s.id})">View</button></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
+    <h4 class="mt-2 mb-2">${label} Queue — ${data.samples.length} sample${data.samples.length > 1 ? 's' : ''}</h4>
+    ${data.samples.map(s => `
+      <div class="card" style="padding:12px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <strong>#${s.id}</strong>
+          <span class="text-sm text-muted">
+            Queue: ${s.queue_type || '-'} | Accepted: ${s.accepted_annotation_count} | ${s.is_closed ? 'Closed' : 'Open'}
+          </span>
+        </div>
+        ${s.recognized_text ? `<p class="text-sm mt-2" style="color:#64748b;">${esc(s.recognized_text)}</p>` : ''}
+        <audio controls src="${s.audio_url}" style="width:100%; margin:8px 0;"></audio>
+        ${s.annotations.length ? `
+          <div class="mt-2" style="border-top:1px solid #e2e8f0; padding-top:8px;">
+            <strong class="text-sm">Annotations (${s.annotations.length}):</strong>
+            ${s.annotations.map(a => {
+              const ad = a.annotation_data;
+              const spans = ad.spans || [];
+              return `
+                <div style="margin:6px 0 6px 8px; padding:6px; background:#f8fafc; border-radius:4px;">
+                  <div class="text-sm">
+                    <strong>${esc(a.display_name)}</strong> (user #${a.user_id})
+                    — <strong>${a.label}</strong> (${choiceLabel(ad.ui_choice)})
+                    <span class="text-muted" style="margin-left:8px;">${a.created_at}</span>
+                  </div>
+                  ${spans.length ? spans.map((sp, si) => {
+                    const txt = sp.text || sp.transcribed_text || '';
+                    return `<div class="text-sm" style="margin-left:12px; margin-top:2px; color:#475569;">
+                      Span ${si + 1}: ${Number(sp.start).toFixed(2)}s–${Number(sp.end).toFixed(2)}s
+                      | intell: ${sp.intelligibility || '?'}${txt ? ' | "' + esc(txt) + '"' : ''}
+                    </div>`;
+                  }).join('') : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : '<p class="text-sm text-muted mt-2">No annotations yet.</p>'}
+      </div>
+    `).join('')}
   `;
 }
 

@@ -112,10 +112,19 @@ Admin sample cards show full golden annotation details:
 - Span count
 - Per-span details: start/end times, intelligibility level, transcribed text
 
-### Production Samples Tab
+### Production Queue Overview
 
-- Read-only list of production samples with queue type, closed status, accepted annotation count
-- "View" button per sample opens all annotations with user name, label, status, timestamp, and full `annotation_data` JSON
+The Production tab in the admin panel provides a real-time queue dashboard:
+
+- **Queue cards** — clickable cards for Unseen, Positive, Negative, Conflict, and Closed queues, each showing the current sample count with color-coded borders (amber, green, gray, red, indigo)
+- **Total counter** — shows the total number of production samples
+- **Queue drill-down** — clicking a queue card loads its samples (up to 100) with full details:
+  - Sample ID, queue type, accepted annotation count, open/closed status
+  - Recognized text and audio player
+  - All accepted annotations inline, each showing: annotator name, user ID, coarse label, detailed UI choice (via `choiceLabel()`), timestamp
+  - Per-annotation span details: start/end times, intelligibility level, transcribed text
+
+Endpoint: `GET /api/admin/queues?queue={unseen|positive|negative|conflict|closed}`
 
 ---
 

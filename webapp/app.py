@@ -780,6 +780,78 @@ def admin_sample_annotations(sample_id):
     ]})
 
 
+@app.route("/api/admin/queues")
+@admin_required
+def admin_queue_overview():
+    """Return production queue stats and samples with their annotations."""
+    db = get_db()
+    queue_filter = request.args.get("queue")  # optional: positive, negative, conflict
+
+    # Queue counts
+    counts = {}
+    for qt in ("unseen", "positive", "negative", "conflict"):
+        row = db.execute(
+            "SELECT COUNT(*) as c FROM samples WHERE sample_type = 'production' AND queue_type = ? AND is_closed = 0",
+            (qt,)
+        ).fetchone()
+        counts[qt] = row["c"]
+    closed_count = db.execute(
+        "SELECT COUNT(*) as c FROM samples WHERE sample_type = 'production' AND is_closed = 1"
+    ).fetchone()["c"]
+    total_count = db.execute(
+        "SELECT COUNT(*) as c FROM samples WHERE sample_type = 'production'"
+    ).fetchone()["c"]
+    counts["closed"] = closed_count
+    counts["total"] = total_count
+
+    # If a specific queue is requested, return its samples with annotations
+    samples_data = []
+    if queue_filter:
+        if queue_filter == "closed":
+            samples = db.execute(
+                "SELECT * FROM samples WHERE sample_type = 'production' AND is_closed = 1 ORDER BY updated_at DESC LIMIT 100"
+            ).fetchall()
+        else:
+            samples = db.execute(
+                "SELECT * FROM samples WHERE sample_type = 'production' AND queue_type = ? AND is_closed = 0 ORDER BY updated_at DESC LIMIT 100",
+                (queue_filter,)
+            ).fetchall()
+
+        for s in samples:
+            anns = db.execute("""
+                SELECT a.id, a.user_id, a.label, a.annotation_data, a.status, a.created_at,
+                       u.display_name
+                FROM annotations a
+                JOIN users u ON a.user_id = u.id
+                WHERE a.sample_id = ? AND a.status = 'accepted'
+                ORDER BY a.created_at
+            """, (s["id"],)).fetchall()
+
+            samples_data.append({
+                "id": s["id"],
+                "audio_url": f"/audio/{os.path.basename(s['audio_path'])}",
+                "recognized_text": s["recognized_text"],
+                "queue_type": s["queue_type"],
+                "is_closed": bool(s["is_closed"]),
+                "accepted_annotation_count": s["accepted_annotation_count"],
+                "annotations": [
+                    {
+                        "id": a["id"],
+                        "user_id": a["user_id"],
+                        "display_name": a["display_name"],
+                        "label": a["label"],
+                        "annotation_data": json.loads(a["annotation_data"]),
+                        "status": a["status"],
+                        "created_at": a["created_at"],
+                    }
+                    for a in anns
+                ],
+            })
+
+    db.close()
+    return jsonify({"counts": counts, "samples": samples_data})
+
+
 @app.route("/api/admin/samples/pick-for-onboarding", methods=["POST"])
 @admin_required
 def admin_pick_for_onboarding():
