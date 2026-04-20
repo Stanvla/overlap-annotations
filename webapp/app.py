@@ -4,6 +4,7 @@ import secrets
 import csv
 import io
 import subprocess
+import sqlite3
 
 from flask import Flask, request, jsonify, session, send_from_directory, send_file, Response
 from functools import wraps
@@ -151,6 +152,23 @@ def _get_calibration_sample(db, user):
         (idx,)
     ).fetchone()
     return sample
+
+
+def _insert_annotation(db, sample_id, user_id, label, annotation_data, status):
+    try:
+        db.execute(
+            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, ?, ?, ?)",
+            (sample_id, user_id, label, json.dumps(annotation_data), status)
+        )
+        return True
+    except sqlite3.IntegrityError as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        if "UNIQUE constraint failed" in str(exc) and "annotations.sample_id, annotations.user_id" in str(exc):
+            return False
+        raise
 
 
 def _pick_production_sample(db, user_id):
@@ -323,10 +341,9 @@ def submit_task():
             db.close()
             return jsonify({"error": "Already submitted"}), 409
 
-        db.execute(
-            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, ?, ?, 'accepted')",
-            (sample_id, user_id, label, json.dumps(annotation_data))
-        )
+        if not _insert_annotation(db, sample_id, user_id, label, annotation_data, "accepted"):
+            db.close()
+            return jsonify({"error": "Already submitted"}), 409
 
         new_idx = user["tutorial_index"] + 1
         total_tutorials = db.execute("SELECT COUNT(*) as c FROM samples WHERE sample_type = 'tutorial'").fetchone()["c"]
@@ -357,10 +374,9 @@ def submit_task():
             db.close()
             return jsonify({"error": "Already submitted"}), 409
 
-        db.execute(
-            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, ?, ?, 'accepted')",
-            (sample_id, user_id, label, json.dumps(annotation_data))
-        )
+        if not _insert_annotation(db, sample_id, user_id, label, annotation_data, "accepted"):
+            db.close()
+            return jsonify({"error": "Already submitted"}), 409
 
         new_idx = user["calibration_index"] + 1
         total_calib = db.execute("SELECT COUNT(*) as c FROM samples WHERE sample_type = 'calibration'").fetchone()["c"]
@@ -418,20 +434,22 @@ def submit_task():
 
     # Step 2: check if already closed / at limit
     if sample["is_closed"] or sample["accepted_annotation_count"] >= 3:
-        db.execute(
-            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, ?, ?, 'overdone')",
-            (sample_id, user_id, label, json.dumps(annotation_data))
-        )
+        if not _insert_annotation(db, sample_id, user_id, label, annotation_data, "overdone"):
+            db.execute("UPDATE users SET current_sample_id = NULL WHERE id = ?", (user_id,))
+            db.commit()
+            db.close()
+            return jsonify({"result": "duplicate", "message": "Already submitted for this sample"}), 409
         db.execute("UPDATE users SET current_sample_id = NULL WHERE id = ?", (user_id,))
         db.commit()
         db.close()
         return jsonify({"result": "overdone"})
 
     # Step 3: store as accepted
-    db.execute(
-        "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, ?, ?, 'accepted')",
-        (sample_id, user_id, label, json.dumps(annotation_data))
-    )
+    if not _insert_annotation(db, sample_id, user_id, label, annotation_data, "accepted"):
+        db.execute("UPDATE users SET current_sample_id = NULL WHERE id = ?", (user_id,))
+        db.commit()
+        db.close()
+        return jsonify({"result": "duplicate", "message": "Already submitted for this sample"}), 409
     new_accepted = sample["accepted_annotation_count"] + 1
     db.execute(
         "UPDATE samples SET accepted_annotation_count = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",

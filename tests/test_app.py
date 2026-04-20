@@ -1,7 +1,10 @@
 """Unit tests for the overlap annotation web app."""
 
+import csv
+import io
 import json
 import os
+import sqlite3
 import tempfile
 
 import pytest
@@ -251,6 +254,44 @@ class TestTaskFlow:
         assert data["sample"] is None
 
 
+class TestContentEndpoints:
+    def test_rules_endpoint_returns_content(self, client):
+        resp = client.get("/api/rules")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "content" in data
+        assert "Pravidla anotace" in data["content"]
+
+    def test_rules_endpoint_missing_file(self, client, monkeypatch, tmp_path):
+        missing_rules = tmp_path / "missing_rules.md"
+        monkeypatch.setattr("webapp.app.RULES_PATH", str(missing_rules))
+        resp = client.get("/api/rules")
+        assert resp.status_code == 404
+        assert resp.get_json()["content"] == ""
+
+    def test_audio_endpoint_serves_file(self, client, monkeypatch, tmp_path):
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+        payload = b"RIFF\x24\x00\x00\x00WAVEfmt "
+        (audio_dir / "clip.wav").write_bytes(payload)
+        monkeypatch.setattr("webapp.app.AUDIO_DIR", str(audio_dir))
+
+        resp = client.get("/audio/clip.wav")
+        assert resp.status_code == 200
+        assert resp.data == payload
+        assert resp.mimetype == "audio/wav"
+
+    def test_audio_endpoint_sanitizes_path(self, client, monkeypatch, tmp_path):
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+        outside_file = tmp_path / "secret.wav"
+        outside_file.write_bytes(b"secret")
+        monkeypatch.setattr("webapp.app.AUDIO_DIR", str(audio_dir))
+
+        resp = client.get("/audio/%2E%2E%2Fsecret.wav")
+        assert resp.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # Production submit & queue logic
 # ---------------------------------------------------------------------------
@@ -487,6 +528,72 @@ class TestProductionSubmit:
         })
         assert resp.status_code == 404
 
+    def test_production_duplicate_race_returns_409(self, client, monkeypatch):
+        monkeypatch.setattr("webapp.app.auto_export", lambda: None)
+        uid, sids = self._setup_production(client)
+        sid = sids[0]
+        client.get("/api/task/current")
+
+        db = get_db()
+        db.execute(
+            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, 'negative', ?, 'accepted')",
+            (sid, uid, json.dumps(_annotation_data("negative"))),
+        )
+        db.commit()
+        db.close()
+
+        class EmptyCursor:
+            def fetchone(self):
+                return None
+
+        class RaceConnection:
+            def __init__(self, conn):
+                self.conn = conn
+                self.duplicate_hidden = False
+
+            def execute(self, sql, params=()):
+                normalized = " ".join(sql.split())
+                if (
+                    not self.duplicate_hidden
+                    and normalized == "SELECT id FROM annotations WHERE sample_id = ? AND user_id = ?"
+                ):
+                    self.duplicate_hidden = True
+                    return EmptyCursor()
+                return self.conn.execute(sql, params)
+
+            def commit(self):
+                return self.conn.commit()
+
+            def rollback(self):
+                return self.conn.rollback()
+
+            def close(self):
+                return self.conn.close()
+
+        monkeypatch.setattr("webapp.app.get_db", lambda: RaceConnection(get_db()))
+
+        resp = client.post("/api/task/submit", json={
+            "sample_id": sid,
+            "annotation_data": _annotation_data("negative"),
+        })
+
+        assert resp.status_code == 409
+        assert resp.get_json()["result"] == "duplicate"
+
+        db = get_db()
+        annotation_count = db.execute(
+            "SELECT COUNT(*) as c FROM annotations WHERE sample_id = ? AND user_id = ?",
+            (sid, uid),
+        ).fetchone()["c"]
+        current_sample_id = db.execute(
+            "SELECT current_sample_id FROM users WHERE id = ?",
+            (uid,),
+        ).fetchone()["current_sample_id"]
+        db.close()
+
+        assert annotation_count == 1
+        assert current_sample_id is None
+
 
 # ---------------------------------------------------------------------------
 # Queue selection logic
@@ -519,6 +626,36 @@ class TestQueueSelection:
         data = resp.get_json()
         # Should not return the closed sample
         assert data["sample"] is None or data["sample"]["id"] != sid
+
+    def test_queue_weights_normalize_over_non_empty_queues(self, client, monkeypatch):
+        _create_user(stage="production")
+        unseen_sid = _create_sample("production", audio_path="unseen.wav", queue_type="unseen")
+        negative_sid = _create_sample("production", audio_path="negative.wav", queue_type="negative")
+        monkeypatch.setattr("webapp.app.random.random", lambda: 0.9)
+        _login(client)
+
+        resp = client.get("/api/task/current")
+        assert resp.status_code == 200
+        assert resp.get_json()["sample"]["id"] == negative_sid
+        assert unseen_sid != negative_sid
+
+    def test_annotated_conflict_sample_is_skipped(self, client):
+        uid = _create_user(stage="production")
+        conflict_sid = _create_sample("production", audio_path="conflict.wav", queue_type="conflict")
+        unseen_sid = _create_sample("production", audio_path="unseen.wav", queue_type="unseen")
+
+        db = get_db()
+        db.execute(
+            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, 'positive', ?, 'accepted')",
+            (conflict_sid, uid, json.dumps(_annotation_data("positive_not_localizable"))),
+        )
+        db.commit()
+        db.close()
+
+        _login(client)
+        resp = client.get("/api/task/current")
+        assert resp.status_code == 200
+        assert resp.get_json()["sample"]["id"] == unseen_sid
 
 
 # ---------------------------------------------------------------------------
@@ -754,6 +891,70 @@ class TestExport:
         _login(client, "admin1")
         resp = client.get("/api/admin/export?format=json&sample_type=production")
         assert resp.status_code == 200
+
+    def test_admin_export_json_contents_and_filter(self, client):
+        _create_user("admin1", "Admin", is_admin=True, stage="production")
+        uid = _create_user("ann", "Annotator", stage="production")
+        prod_sid = _create_sample("production", audio_path="prod.wav", recognized_text="prod text", queue_type="positive")
+        calib_sid = _create_sample(
+            "calibration",
+            audio_path="cal.wav",
+            recognized_text="cal text",
+            golden_annotation={"ui_choice": "negative", "spans": []},
+        )
+
+        db = get_db()
+        db.execute("UPDATE samples SET accepted_annotation_count = 1, queue_type = 'positive' WHERE id = ?", (prod_sid,))
+        db.execute(
+            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, 'positive', ?, 'accepted')",
+            (prod_sid, uid, json.dumps(_annotation_data("positive_localizable", [{"start": 0, "end": 1}]))),
+        )
+        db.execute(
+            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, 'negative', ?, 'accepted')",
+            (calib_sid, uid, json.dumps(_annotation_data("negative"))),
+        )
+        db.commit()
+        db.close()
+
+        _login(client, "admin1")
+        resp = client.get("/api/admin/export?format=json&sample_type=production")
+        assert resp.status_code == 200
+
+        data = resp.get_json()
+        assert len(data) == 1
+        row = data[0]
+        assert row["sample_id"] == prod_sid
+        assert row["sample_type"] == "production"
+        assert row["display_name"] == "Annotator"
+        assert row["ui_choice"] == "positive_localizable"
+        assert row["spans"] == [{"start": 0, "end": 1}]
+
+    def test_admin_export_tsv_contains_serialized_rows(self, client):
+        _create_user("admin1", "Admin", is_admin=True, stage="production")
+        uid = _create_user("ann", "Annotator", stage="production")
+        prod_sid = _create_sample("production", audio_path="prod.wav", recognized_text="prod text", queue_type="positive")
+
+        db = get_db()
+        db.execute("UPDATE samples SET accepted_annotation_count = 1, queue_type = 'positive' WHERE id = ?", (prod_sid,))
+        db.execute(
+            "INSERT INTO annotations (sample_id, user_id, label, annotation_data, status) VALUES (?, ?, 'positive', ?, 'accepted')",
+            (prod_sid, uid, json.dumps(_annotation_data("positive_localizable", [{"start": 0.1, "end": 0.5}]))),
+        )
+        db.commit()
+        db.close()
+
+        _login(client, "admin1")
+        resp = client.get("/api/admin/export?format=tsv")
+        assert resp.status_code == 200
+
+        rows = list(csv.DictReader(io.StringIO(resp.get_data(as_text=True)), delimiter="\t"))
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["sample_id"] == str(prod_sid)
+        assert row["sample_type"] == "production"
+        assert row["display_name"] == "Annotator"
+        assert row["ui_choice"] == "positive_localizable"
+        assert json.loads(row["spans_json"]) == [{"start": 0.1, "end": 0.5}]
 
 
 # ---------------------------------------------------------------------------
