@@ -132,3 +132,16 @@ Chronological log of all changes made to the application.
 - Play buttons per span with auto-stop at span end
 - Annotation cards have color-coded left borders matching their region color on the waveform
 - Waveform instances tracked and properly cleaned up on tab switch or reload
+
+### Unit test suite
+- Added `pytest` to `[project.optional-dependencies] test` in `pyproject.toml`
+- Created `tests/test_app.py` with 63 tests covering all backend functionality:
+  - **Auth** (8 tests): login success/failure, empty/missing code, logout, `/me` authenticated/unauthenticated, `@login_required` decorator
+  - **Task flow** (11 tests): rules stage, rules acknowledgement (+ idempotent), tutorial task/submit/advance/duplicate, auto-advance when no samples, calibration task/submit with results, no-samples-available
+  - **Production submit & queue logic** (13 tests): task assignment, accepted submit, duplicate rejection (409), positive→positive queue routing, negative 90% close / 10% requeue (deterministic via monkeypatched `random`), two agreeing annotations close sample, disagreement marks conflict, three annotations always close, overdone after close, missing data / invalid `ui_choice` / sample-not-found validation
+  - **Queue selection** (2 tests): conflict queue priority, stale assignment cleanup
+  - **Admin** (17 tests): `@admin_required` guard, user CRUD (create with auto-code, empty name, duplicate code), user update/not-found, stage reset with annotation deletion, sample CRUD (create/invalid type/list/filter/update/not-found), tutorial delete allowed / production delete blocked, sample annotations view, queue overview with/without filter, pick-for-onboarding success/invalid type
+  - **Export** (3 tests): TSV and JSON format, sample_type filter
+  - **Database** (4 tests): table creation, `init_db` idempotency, WAL mode, foreign keys enabled
+- Each test uses a fresh temporary SQLite database via `monkeypatch` + `tmp_path`
+- `auto_export` monkeypatched in production tests to avoid file I/O and git calls

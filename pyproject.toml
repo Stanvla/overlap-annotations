@@ -27,5 +27,8 @@ dev = [
     "ipykernel>=6.0.0",
     "ipywidgets"
 ]
+test = [
+    "pytest>=7.0",
+]
 
 
