@@ -176,3 +176,9 @@ Chronological log of all changes made to the application.
 - Added `convert_audios_to_flac.py` to create FLAC copies of audio files for smaller archive/LFS workflows
 - Script recursively converts supported audio files from `selected_audios/` into `selected_audios_flac/` by default, preserves relative paths, and prints a size summary
 - Added `selected_audios_flac/` to `.gitignore` so generated FLAC output is not committed accidentally
+
+### Relative audio paths in import pool
+- Rewrote `annotation_pool.tsv` audio paths from machine-specific absolute paths to project-relative `selected_audios/...` paths
+- Updated `webapp/import_data.py` to normalize imported audio paths into relative `selected_audios/...` form so both old absolute-path TSVs and the new relative TSV format import cleanly
+- Updated `webapp/app.py` to generate audio URLs from relative paths, preserve nested subpaths, and resolve audio serving from the `selected_audios/` tree instead of assuming flat basename-only paths
+- Added regression tests for relative audio URLs, nested audio serving, and relative-path normalization during TSV import

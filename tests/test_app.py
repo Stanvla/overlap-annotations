@@ -15,6 +15,7 @@ os.environ["ANNOTATION_DB"] = os.path.join(_tmpdir, "test.db")
 
 from webapp.app import app
 from webapp.db import get_db, init_db
+from webapp.import_data import import_production_samples
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +254,16 @@ class TestTaskFlow:
         assert data["mode"] == "production"
         assert data["sample"] is None
 
+    def test_task_uses_relative_audio_url_from_selected_audios_path(self, client):
+        _create_user(stage="tutorial")
+        golden = {"ui_choice": "negative", "spans": []}
+        _create_sample("tutorial", audio_path="selected_audios/subdir/test.wav", golden_annotation=golden)
+        _login(client)
+
+        resp = client.get("/api/task/current")
+        assert resp.status_code == 200
+        assert resp.get_json()["sample"]["audio_url"] == "/audio/subdir/test.wav"
+
 
 class TestContentEndpoints:
     def test_rules_endpoint_returns_content(self, client):
@@ -277,6 +288,19 @@ class TestContentEndpoints:
         monkeypatch.setattr("webapp.app.AUDIO_DIR", str(audio_dir))
 
         resp = client.get("/audio/clip.wav")
+        assert resp.status_code == 200
+        assert resp.data == payload
+        assert resp.mimetype == "audio/wav"
+
+    def test_audio_endpoint_serves_nested_relative_path(self, client, monkeypatch, tmp_path):
+        audio_dir = tmp_path / "audio"
+        nested_dir = audio_dir / "nested"
+        nested_dir.mkdir(parents=True)
+        payload = b"RIFF\x24\x00\x00\x00WAVEfmt "
+        (nested_dir / "clip.wav").write_bytes(payload)
+        monkeypatch.setattr("webapp.app.AUDIO_DIR", str(audio_dir))
+
+        resp = client.get("/audio/nested/clip.wav")
         assert resp.status_code == 200
         assert resp.data == payload
         assert resp.mimetype == "audio/wav"
@@ -979,6 +1003,42 @@ class TestExport:
         assert row["display_name"] == "Annotator"
         assert row["ui_choice"] == "positive_localizable"
         assert json.loads(row["spans_json"]) == [{"start": 0.1, "end": 0.5}]
+
+
+class TestImportData:
+    def test_import_production_samples_normalizes_absolute_paths(self, tmp_path):
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        source_tsv = tmp_path / "annotation_pool.tsv"
+        source_tsv.write_text(
+            "audio_path\tprediction\n"
+            f"{project_root}/selected_audios/000001.wav\tHello\n",
+            encoding="utf-8",
+        )
+
+        import_production_samples(str(source_tsv))
+
+        db = get_db()
+        row = db.execute("SELECT audio_path, recognized_text FROM samples WHERE sample_type = 'production'").fetchone()
+        db.close()
+
+        assert row["audio_path"] == "selected_audios/000001.wav"
+        assert row["recognized_text"] == "Hello"
+
+    def test_import_production_samples_keeps_relative_paths(self, tmp_path):
+        source_tsv = tmp_path / "annotation_pool.tsv"
+        source_tsv.write_text(
+            "audio_path\tprediction\n"
+            "selected_audios/subdir/000001.wav\tHello\n",
+            encoding="utf-8",
+        )
+
+        import_production_samples(str(source_tsv))
+
+        db = get_db()
+        row = db.execute("SELECT audio_path FROM samples WHERE sample_type = 'production'").fetchone()
+        db.close()
+
+        assert row["audio_path"] == "selected_audios/subdir/000001.wav"
 
 
 # ---------------------------------------------------------------------------

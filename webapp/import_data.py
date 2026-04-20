@@ -1,5 +1,6 @@
 """Import samples from annotation_pool.tsv into the database."""
 import csv
+import json
 import os
 import sys
 import secrets
@@ -8,6 +9,18 @@ import secrets
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from webapp.db import init_db, get_db
+
+
+def normalize_audio_path(audio_path):
+    normalized = str(audio_path).replace("\\", "/").strip()
+    normalized = normalized.removeprefix("./")
+
+    marker = "/selected_audios/"
+    if marker in normalized:
+        return f"selected_audios/{normalized.split(marker, 1)[1]}"
+    if normalized.startswith("selected_audios/"):
+        return normalized
+    return f"selected_audios/{normalized.lstrip('/')}"
 
 
 def import_production_samples(tsv_path):
@@ -24,11 +37,10 @@ def import_production_samples(tsv_path):
     with open(tsv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
-            audio_path = row["audio_path"]
+            audio_path = normalize_audio_path(row["audio_path"])
             recognized_text = row.get("prediction", "")
             metadata = {k: row[k] for k in row if k not in ("audio_path", "prediction")}
 
-            import json
             db.execute(
                 """INSERT INTO samples (sample_type, audio_path, recognized_text, queue_type, metadata_json)
                    VALUES ('production', ?, ?, 'unseen', ?)""",

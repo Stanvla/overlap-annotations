@@ -6,18 +6,21 @@ import io
 import subprocess
 import sqlite3
 import mimetypes
+import posixpath
 
 from flask import Flask, request, jsonify, session, send_from_directory, send_file, Response
 from functools import wraps
 import os
+from urllib.parse import quote
 
 from .db import get_db, init_db
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), "..", "static"))
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
-AUDIO_DIR = os.path.join(os.path.dirname(__file__), "..", "selected_audios")
-EXPORT_DIR = os.environ.get("EXPORT_DIR", os.path.join(os.path.dirname(__file__), ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+AUDIO_DIR = os.environ.get("AUDIO_DIR", os.path.join(PROJECT_ROOT, "selected_audios"))
+EXPORT_DIR = os.environ.get("EXPORT_DIR", PROJECT_ROOT)
 
 NEGATIVE_REQUEUE_PROB = 0.1
 
@@ -26,6 +29,43 @@ QUEUE_WEIGHTS = {
     "unseen": 0.45,
     "negative": 0.10,
 }
+
+
+def _normalize_audio_path(audio_path):
+    if not audio_path:
+        return ""
+
+    normalized = str(audio_path).replace("\\", "/").strip()
+    normalized = normalized.removeprefix("./")
+
+    marker = "/selected_audios/"
+    if marker in normalized:
+        return f"selected_audios/{normalized.split(marker, 1)[1]}"
+    if normalized.startswith("selected_audios/"):
+        return normalized
+    return normalized
+
+
+def _audio_request_path(audio_path):
+    normalized = _normalize_audio_path(audio_path)
+    if normalized.startswith("selected_audios/"):
+        normalized = normalized[len("selected_audios/"):]
+    return normalized.lstrip("/")
+
+
+def _audio_url(audio_path):
+    return f"/audio/{quote(_audio_request_path(audio_path), safe='/')}"
+
+
+def _requested_audio_fs_path(filename):
+    requested = filename.replace("\\", "/")
+    if requested.startswith("selected_audios/"):
+        requested = requested[len("selected_audios/"):]
+
+    normalized = posixpath.normpath(requested).lstrip("/")
+    if normalized in ("", ".", "..") or normalized.startswith("../"):
+        return None
+    return os.path.join(AUDIO_DIR, normalized)
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +169,7 @@ def _sample_dict(row, include_golden=False):
     d = {
         "id": row["id"],
         "sample_type": row["sample_type"],
-        "audio_url": f"/audio/{os.path.basename(row['audio_path'])}",
+        "audio_url": _audio_url(row["audio_path"]),
         "recognized_text": row["recognized_text"],
     }
     if include_golden and row["golden_annotation"]:
@@ -580,8 +620,9 @@ def get_rules():
 @app.route("/audio/<path:filename>")
 def serve_audio(filename):
     # Sanitize — only serve files from the audio directory.
-    safe_name = os.path.basename(filename)
-    requested_path = os.path.join(AUDIO_DIR, safe_name)
+    requested_path = _requested_audio_fs_path(filename)
+    if not requested_path:
+        return jsonify({"error": "Not found"}), 404
 
     candidates = [requested_path]
     requested_root, _requested_ext = os.path.splitext(requested_path)
@@ -705,7 +746,7 @@ def admin_list_samples():
             "id": s["id"],
             "sample_type": s["sample_type"],
             "audio_path": s["audio_path"],
-            "audio_url": f"/audio/{os.path.basename(s['audio_path'])}",
+            "audio_url": _audio_url(s["audio_path"]),
             "recognized_text": s["recognized_text"],
             "golden_annotation": json.loads(s["golden_annotation"]) if s["golden_annotation"] else None,
             "queue_type": s["queue_type"],
@@ -869,7 +910,7 @@ def admin_queue_overview():
 
             samples_data.append({
                 "id": s["id"],
-                "audio_url": f"/audio/{os.path.basename(s['audio_path'])}",
+                "audio_url": _audio_url(s["audio_path"]),
                 "recognized_text": s["recognized_text"],
                 "queue_type": s["queue_type"],
                 "is_closed": bool(s["is_closed"]),

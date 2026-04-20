@@ -45,6 +45,8 @@ scp annotations.db user@server:/opt/overlap-annotations/
 
 > **If starting fresh** (no existing database), the app will create a new one automatically on first run.
 
+`annotation_pool.tsv` is tracked in normal git and now stores project-relative audio paths such as `selected_audios/000018.wav`, so it can be used directly on the server without rewriting machine-specific absolute paths.
+
 ### Optional: ship audio as one Git LFS archive
 
 If the audio dataset is mostly fixed and you want a simpler deployment workflow, you can store one archive such as `selected_audios.tar.gz` in Git LFS instead of syncing the whole `selected_audios/` directory separately.
@@ -258,6 +260,7 @@ These are also auto-committed to git (if a git repo is present). You can additio
 | `backup.sh`            | ✓              | Backup script                          |
 | `pyproject.toml`       | ✓              | Python package config                  |
 | `annotatori_pravidla_overlap.md` | ✓    | Annotation rules (served to users)     |
+| `annotation_pool.tsv`   | ✓              | Import pool with relative `selected_audios/...` paths |
 | `annotations_export.*` | ✓              | Auto-exported annotations              |
 | `annotations.db`       | ✗              | SQLite database (all app data)         |
 | `selected_audios/`     | ✗              | Audio files (~1500 .wav)               |
@@ -278,6 +281,9 @@ SQLite WAL mode handles concurrent reads well. For a small team (< 10 users) thi
 
 **Audio files not playing:**
 Ensure `selected_audios/` exists and contains the `.wav` files. If you use the archive workflow, confirm that `selected_audios.tar.gz` was fully downloaded via Git LFS and extracted successfully.
+
+**Importing from annotation_pool.tsv on the server:**
+The TSV now uses relative paths like `selected_audios/000018.wav`. Keep the extracted audio files under `selected_audios/` in the project root so imported samples resolve correctly.
 
 **Users can't log in after redeployment:**
 Make sure `SECRET_KEY` is the same as before. The deployment script persists it to `.secret_key` automatically. If you lost it, users will need to log in again (their data is safe in the DB).
