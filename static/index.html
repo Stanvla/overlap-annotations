@@ -365,6 +365,10 @@ audio {
 
 .calibration-result.match { border-left: 4px solid var(--success); }
 .calibration-result.mismatch { border-left: 4px solid var(--danger); }
+.cal-waveform { width: 100%; margin-top: 8px; }
+.golden-region-label { font-size: 11px; padding: 2px 4px; }
+.play-span-btn { cursor: pointer; background: #e0f2fe; border: 1px solid #7dd3fc; border-radius: 4px; padding: 2px 8px; font-size: 12px; }
+.play-span-btn:hover { background: #bae6fd; }
 
 /* Admin styles */
 .admin-table {
@@ -760,6 +764,7 @@ function hideAllModes() {
   ['mode-rules', 'mode-annotation', 'mode-empty', 'mode-calibration-results'].forEach(id => {
     document.getElementById(id).classList.add('hidden');
   });
+  if (typeof destroyCalWaveforms === 'function') destroyCalWaveforms();
 }
 
 async function loadTask() {
@@ -1117,6 +1122,22 @@ function showTutorialFeedback(golden, userAnswer) {
     </div>
     <button class="btn btn-primary mt-2" onclick="loadTask()">Next</button>
   `;
+
+  // Show golden spans as green regions on the existing waveform
+  if (wavesurfer && wsRegions && golden.spans && golden.spans.length > 0) {
+    golden.spans.forEach((sp, i) => {
+      const txt = sp.text || sp.transcribed_text || '';
+      const label = `Golden ${i + 1}` + (txt ? ': ' + txt : '');
+      wsRegions.addRegion({
+        start: sp.start,
+        end: sp.end,
+        color: 'rgba(34, 197, 94, 0.25)',
+        drag: false,
+        resize: false,
+        content: label,
+      });
+    });
+  }
 }
 
 function choiceLabel(c) {
@@ -1126,8 +1147,16 @@ function choiceLabel(c) {
   return c;
 }
 
+let calWaveforms = []; // track calibration result waveform instances for cleanup
+
+function destroyCalWaveforms() {
+  calWaveforms.forEach(ws => { try { ws.destroy(); } catch(e) {} });
+  calWaveforms = [];
+}
+
 function showCalibrationResults(results) {
   hideAllModes();
+  destroyCalWaveforms();
   document.getElementById('mode-calibration-results').classList.remove('hidden');
 
   const list = document.getElementById('calibration-results-list');
@@ -1136,6 +1165,7 @@ function showCalibrationResults(results) {
     const userLabel = r.your_answer ? (r.your_answer.ui_choice === 'negative' ? 'negative' : 'positive') : '?';
     const match = goldenLabel === userLabel;
     const goldenSpansHtml = r.golden ? renderSpanDetails(r.golden) : '';
+    const hasSpans = r.golden && r.golden.spans && r.golden.spans.length > 0;
     return `
       <div class="calibration-result ${match ? 'match' : 'mismatch'}">
         <strong>Sample ${i + 1}</strong> — ${match ? '✓ Match' : '✗ Mismatch'}
@@ -1144,10 +1174,69 @@ function showCalibrationResults(results) {
           Correct: <strong>${r.golden ? choiceLabel(r.golden.ui_choice) : 'N/A'}</strong>
         </p>
         ${goldenSpansHtml ? '<div class="text-sm mt-2" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Correct spans:</strong>' + goldenSpansHtml + '</div>' : ''}
-        <audio controls src="${r.sample.audio_url}" class="mt-2" style="width:100%;"></audio>
+        <div id="cal-waveform-${i}" class="cal-waveform"></div>
+        ${hasSpans ? `<div id="cal-span-btns-${i}" class="mt-2" style="display:flex;gap:4px;flex-wrap:wrap;"></div>` : ''}
       </div>
     `;
   }).join('');
+
+  // Initialize waveforms with golden regions
+  results.forEach((r, i) => {
+    const regions = WaveSurfer.Regions.create();
+    const ws = WaveSurfer.create({
+      container: `#cal-waveform-${i}`,
+      waveColor: '#94a3b8',
+      progressColor: '#2563eb',
+      cursorColor: '#1e293b',
+      cursorWidth: 1,
+      height: 80,
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 2,
+      normalize: true,
+      interact: true,
+      plugins: [regions],
+    });
+    calWaveforms.push(ws);
+    ws.load(r.sample.audio_url);
+
+    ws.on('ready', () => {
+      if (r.golden && r.golden.spans && r.golden.spans.length > 0) {
+        const btnContainer = document.getElementById(`cal-span-btns-${i}`);
+        r.golden.spans.forEach((sp, si) => {
+          const txt = sp.text || sp.transcribed_text || '';
+          const label = `Span ${si + 1}` + (txt ? ': ' + txt : '');
+          regions.addRegion({
+            start: sp.start,
+            end: sp.end,
+            color: 'rgba(34, 197, 94, 0.25)',
+            drag: false,
+            resize: false,
+            content: label,
+          });
+          // Add play button for each span
+          if (btnContainer) {
+            const btn = document.createElement('button');
+            btn.className = 'play-span-btn';
+            btn.textContent = `▶ Span ${si + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
+            btn.onclick = () => {
+              ws.setTime(sp.start);
+              ws.play();
+              // Auto-stop at span end
+              const onProcess = (time) => {
+                if (time >= sp.end) {
+                  ws.pause();
+                  ws.un('audioprocess', onProcess);
+                }
+              };
+              ws.on('audioprocess', onProcess);
+            };
+            btnContainer.appendChild(btn);
+          }
+        });
+      }
+    });
+  });
 }
 
 async function acknowledgeRules() {
