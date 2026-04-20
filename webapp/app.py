@@ -5,6 +5,7 @@ import csv
 import io
 import subprocess
 import sqlite3
+import mimetypes
 
 from flask import Flask, request, jsonify, session, send_from_directory, send_file, Response
 from functools import wraps
@@ -554,6 +555,16 @@ def acknowledge_rules():
 
 RULES_PATH = os.path.join(os.path.dirname(__file__), "..", "annotatori_pravidla_overlap.md")
 
+AUDIO_MIME_TYPES = {
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+}
+
 @app.route("/api/rules")
 def get_rules():
     if not os.path.isfile(RULES_PATH):
@@ -568,12 +579,23 @@ def get_rules():
 
 @app.route("/audio/<path:filename>")
 def serve_audio(filename):
-    # Sanitize — only serve .wav files from the audio directory
+    # Sanitize — only serve files from the audio directory.
     safe_name = os.path.basename(filename)
-    audio_path = os.path.join(AUDIO_DIR, safe_name)
-    if not os.path.isfile(audio_path):
+    requested_path = os.path.join(AUDIO_DIR, safe_name)
+
+    candidates = [requested_path]
+    requested_root, _requested_ext = os.path.splitext(requested_path)
+    flac_fallback = requested_root + ".flac"
+    if flac_fallback not in candidates:
+        candidates.append(flac_fallback)
+
+    audio_path = next((path for path in candidates if os.path.isfile(path)), None)
+    if not audio_path:
         return jsonify({"error": "Not found"}), 404
-    return send_file(audio_path, mimetype="audio/wav")
+
+    extension = os.path.splitext(audio_path)[1].lower()
+    mimetype = AUDIO_MIME_TYPES.get(extension) or mimetypes.guess_type(audio_path)[0] or "application/octet-stream"
+    return send_file(audio_path, mimetype=mimetype)
 
 
 # ---------------------------------------------------------------------------

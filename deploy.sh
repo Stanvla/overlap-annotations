@@ -14,12 +14,22 @@ set -euo pipefail
 #   WORKERS       — gunicorn worker count (default: 1)
 #   SECRET_KEY    — Flask session secret (auto-generated if not set)
 #   EXPORT_DIR    — directory for auto-exported annotation files
+#   AUDIO_ARCHIVE — tar.gz archive to extract into selected_audios/ if needed
+#   FORCE_AUDIO_EXTRACT — set to 1 to re-extract the audio archive even if selected_audios/ already exists
 # ============================================================
 
 PORT="${PORT:-5000}"
 HOST="${HOST:-0.0.0.0}"
 WORKERS="${WORKERS:-1}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RAW_AUDIO_ARCHIVE="${AUDIO_ARCHIVE:-selected_audios.tar.gz}"
+FORCE_AUDIO_EXTRACT="${FORCE_AUDIO_EXTRACT:-0}"
+
+if [[ "$RAW_AUDIO_ARCHIVE" = /* ]]; then
+    AUDIO_ARCHIVE="$RAW_AUDIO_ARCHIVE"
+else
+    AUDIO_ARCHIVE="$SCRIPT_DIR/$RAW_AUDIO_ARCHIVE"
+fi
 
 echo "=== Overlap Annotation App Deployment ==="
 echo "Project dir: $SCRIPT_DIR"
@@ -53,8 +63,20 @@ pip install -e "$SCRIPT_DIR" -q
 pip install gunicorn -q
 
 # 4. Check required files
+if [ "$FORCE_AUDIO_EXTRACT" = "1" ] && [ -f "$AUDIO_ARCHIVE" ]; then
+    echo "Re-extracting audio archive from $AUDIO_ARCHIVE ..."
+    rm -rf "$SCRIPT_DIR/selected_audios"
+    tar -xzf "$AUDIO_ARCHIVE" -C "$SCRIPT_DIR"
+fi
+
+if [ ! -d "$SCRIPT_DIR/selected_audios" ] && [ -f "$AUDIO_ARCHIVE" ]; then
+    echo "Extracting audio archive from $AUDIO_ARCHIVE ..."
+    tar -xzf "$AUDIO_ARCHIVE" -C "$SCRIPT_DIR"
+fi
+
 if [ ! -d "$SCRIPT_DIR/selected_audios" ]; then
-    echo "WARNING: selected_audios/ directory not found. Audio playback will not work."
+    echo "WARNING: selected_audios/ directory not found."
+    echo "         Provide selected_audios/ directly or add $AUDIO_ARCHIVE (for example via Git LFS)."
 fi
 
 if [ ! -f "$SCRIPT_DIR/annotations.db" ]; then

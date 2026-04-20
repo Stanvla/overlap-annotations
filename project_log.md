@@ -171,3 +171,8 @@ Chronological log of all changes made to the application.
 - Added explicit `sqlite3` availability check to `backup.sh`
 - Updated `deployment.md` with safer WAL-mode restore instructions, including stopping the service and removing `annotations.db-wal` / `annotations.db-shm`
 - Updated `deployment.md` with file ownership/write-permission requirements for the service user and more explicit systemd environment configuration
+
+### Audio conversion utility
+- Added `convert_audios_to_flac.py` to create FLAC copies of audio files for smaller archive/LFS workflows
+- Script recursively converts supported audio files from `selected_audios/` into `selected_audios_flac/` by default, preserves relative paths, and prints a size summary
+- Added `selected_audios_flac/` to `.gitignore` so generated FLAC output is not committed accidentally

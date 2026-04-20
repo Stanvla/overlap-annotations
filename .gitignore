@@ -1,5 +1,6 @@
 *.wav
 *.mp3
+selected_audios_flac/
 *.pkl
 *.parquet
 *.db

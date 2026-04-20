@@ -4,8 +4,17 @@
 
 - **Python 3.10+**
 - **git**
+- **git-lfs** (optional, if you keep `selected_audios.tar.gz` in Git LFS)
 - **sqlite3** (for backups)
 - A Linux server with shell access
+
+If `git lfs` is not available on Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install -y git-lfs
+git lfs install
+```
 
 ---
 
@@ -36,6 +45,33 @@ scp annotations.db user@server:/opt/overlap-annotations/
 
 > **If starting fresh** (no existing database), the app will create a new one automatically on first run.
 
+### Optional: ship audio as one Git LFS archive
+
+If the audio dataset is mostly fixed and you want a simpler deployment workflow, you can store one archive such as `selected_audios.tar.gz` in Git LFS instead of syncing the whole `selected_audios/` directory separately.
+
+Recommended archive format on Linux:
+
+```bash
+tar -czf selected_audios.tar.gz selected_audios/
+```
+
+Recommended Git LFS tracking:
+
+```bash
+git lfs install
+git lfs track "selected_audios.tar.gz"
+git add .gitattributes selected_audios.tar.gz
+git commit -m "Track audio archive with Git LFS"
+```
+
+On the server:
+
+```bash
+git lfs pull
+```
+
+The deployment script will automatically extract `selected_audios.tar.gz` into `selected_audios/` if the directory is missing.
+
 ## 3. Deploy
 
 Run the included deployment script:
@@ -47,8 +83,9 @@ bash deploy.sh
 This will:
 1. Create a Python virtual environment in `.venv/`
 2. Install all dependencies + gunicorn
-3. Generate and persist a `SECRET_KEY` (saved to `.secret_key`)
-4. Start the server on `http://0.0.0.0:5000`
+3. Extract `selected_audios.tar.gz` into `selected_audios/` if the directory is missing and the archive is present
+4. Generate and persist a `SECRET_KEY` (saved to `.secret_key`)
+5. Start the server on `http://0.0.0.0:5000`
 
 ### Configuration via environment variables
 
@@ -60,11 +97,19 @@ This will:
 | `SECRET_KEY`    | Auto-generated         | Flask session signing key                |
 | `ANNOTATION_DB` | `./annotations.db`     | Path to SQLite database file             |
 | `EXPORT_DIR`    | Project root           | Where auto-exported TSV/JSON are written |
+| `AUDIO_ARCHIVE` | `./selected_audios.tar.gz` | Archive to extract into `selected_audios/` |
+| `FORCE_AUDIO_EXTRACT` | `0`              | Re-extract archive even if `selected_audios/` exists |
 
 Example with custom settings:
 
 ```bash
 PORT=8080 WORKERS=4 bash deploy.sh
+```
+
+Example forcing archive re-extraction:
+
+```bash
+FORCE_AUDIO_EXTRACT=1 bash deploy.sh
 ```
 
 ## 4. Run as a systemd service (recommended)
@@ -232,7 +277,7 @@ PORT=8080 bash deploy.sh
 SQLite WAL mode handles concurrent reads well. For a small team (< 10 users) this is fine. If you see locking issues, reduce gunicorn workers to 1.
 
 **Audio files not playing:**
-Ensure `selected_audios/` exists and contains the `.wav` files. The app serves them from this directory.
+Ensure `selected_audios/` exists and contains the `.wav` files. If you use the archive workflow, confirm that `selected_audios.tar.gz` was fully downloaded via Git LFS and extracted successfully.
 
 **Users can't log in after redeployment:**
 Make sure `SECRET_KEY` is the same as before. The deployment script persists it to `.secret_key` automatically. If you lost it, users will need to log in again (their data is safe in the DB).

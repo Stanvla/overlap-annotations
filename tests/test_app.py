@@ -281,6 +281,30 @@ class TestContentEndpoints:
         assert resp.data == payload
         assert resp.mimetype == "audio/wav"
 
+    def test_audio_endpoint_serves_flac_with_correct_mimetype(self, client, monkeypatch, tmp_path):
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+        payload = b"fLaC\x00\x00\x00\x22"
+        (audio_dir / "clip.flac").write_bytes(payload)
+        monkeypatch.setattr("webapp.app.AUDIO_DIR", str(audio_dir))
+
+        resp = client.get("/audio/clip.flac")
+        assert resp.status_code == 200
+        assert resp.data == payload
+        assert resp.mimetype == "audio/flac"
+
+    def test_audio_endpoint_falls_back_to_flac_for_wav_request(self, client, monkeypatch, tmp_path):
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+        payload = b"fLaC\x00\x00\x00\x22"
+        (audio_dir / "clip.flac").write_bytes(payload)
+        monkeypatch.setattr("webapp.app.AUDIO_DIR", str(audio_dir))
+
+        resp = client.get("/audio/clip.wav")
+        assert resp.status_code == 200
+        assert resp.data == payload
+        assert resp.mimetype == "audio/flac"
+
     def test_audio_endpoint_sanitizes_path(self, client, monkeypatch, tmp_path):
         audio_dir = tmp_path / "audio"
         audio_dir.mkdir()
