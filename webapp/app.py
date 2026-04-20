@@ -599,6 +599,17 @@ def admin_update_user(user_id):
 
     # When resetting to an onboarding stage, also reset indexes
     if stage != user["stage"] and stage in ("rules", "tutorial", "calibration"):
+        # Delete old tutorial/calibration annotations so user can redo them
+        tut_cal_sample_ids = db.execute(
+            "SELECT id FROM samples WHERE sample_type IN ('tutorial', 'calibration')"
+        ).fetchall()
+        if tut_cal_sample_ids:
+            id_list = [r["id"] for r in tut_cal_sample_ids]
+            placeholders = ",".join("?" * len(id_list))
+            db.execute(
+                f"DELETE FROM annotations WHERE user_id = ? AND sample_id IN ({placeholders})",
+                [user_id] + id_list
+            )
         db.execute(
             """UPDATE users SET display_name = ?, login_code = ?, is_admin = ?, stage = ?,
                tutorial_index = 0, calibration_index = 0, current_sample_id = NULL,
