@@ -1111,6 +1111,8 @@ function showTutorialFeedback(golden, userAnswer) {
 
   const goldenSpansHtml = renderSpanDetails(golden);
 
+  const hasGoldenSpans = golden.spans && golden.spans.length > 0;
+
   area.innerHTML = `
     <div class="feedback-box ${isCorrect ? 'feedback-correct' : 'feedback-incorrect'}">
       <strong>${isCorrect ? '✓ Correct!' : '✗ Incorrect'}</strong>
@@ -1119,12 +1121,14 @@ function showTutorialFeedback(golden, userAnswer) {
         Correct answer: <strong>${choiceLabel(goldenChoice)}</strong>
       </p>
       ${goldenSpansHtml ? '<div class="mt-2 text-sm" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Correct spans:</strong>' + goldenSpansHtml + '</div>' : ''}
+      ${hasGoldenSpans ? '<div id="tutorial-span-btns" class="mt-2" style="display:flex;gap:4px;flex-wrap:wrap;"></div>' : ''}
     </div>
     <button class="btn btn-primary mt-2" onclick="loadTask()">Next</button>
   `;
 
-  // Show golden spans as green regions on the existing waveform
-  if (wavesurfer && wsRegions && golden.spans && golden.spans.length > 0) {
+  // Show golden spans as green regions on the existing waveform + play buttons
+  if (wavesurfer && wsRegions && hasGoldenSpans) {
+    const btnContainer = document.getElementById('tutorial-span-btns');
     golden.spans.forEach((sp, i) => {
       const txt = sp.text || sp.transcribed_text || '';
       const label = `Golden ${i + 1}` + (txt ? ': ' + txt : '');
@@ -1136,6 +1140,22 @@ function showTutorialFeedback(golden, userAnswer) {
         resize: false,
         content: label,
       });
+      // Play button per span
+      const btn = document.createElement('button');
+      btn.className = 'play-span-btn';
+      btn.textContent = `▶ Span ${i + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
+      btn.onclick = () => {
+        wavesurfer.setTime(sp.start);
+        wavesurfer.play();
+        const onProcess = (time) => {
+          if (time >= sp.end) {
+            wavesurfer.pause();
+            wavesurfer.un('audioprocess', onProcess);
+          }
+        };
+        wavesurfer.on('audioprocess', onProcess);
+      };
+      btnContainer.appendChild(btn);
     });
   }
 }
