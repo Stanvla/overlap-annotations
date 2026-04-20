@@ -24,16 +24,16 @@ Při každém příkladu vyberte jednu z těchto možností:
 
 Vyberte tuto možnost, pokud:
 - je slyšet jen jeden mluvčí,
-- je na pozadí jen hluk, šum, hudba nebo dav,
-- jsou na pozadí hlasy, ale jsou očividně daleko od mikrofonu; je možné, že jsou slyšet jednotlivá slova, ale celková řeč není rozpoznatelná.
+- není zřejmý žádný hlavní mluvčí, jen jen hluk, šum, hudba nebo dav na pozadí,
+- jsou slyšet různé hlasy, ale jsou očividně daleko od mikrofonu; je možné, že jsou slyšet jednotlivá slova, ale souvislá řeč není rozpoznatelná, nejde o projev s překryvem.
 
 V tomto případě se nic dalšího neoznačuje.
 
 ### 2. Overlap existuje, ale nelze ho spolehlivě lokalizovat
 
-Vyberte tuto možnost, pokud je zřejmé, že je v nahrávce další překrývající se řeč, která není jen pozadí, ale nejste schopni rozumně určit, kde přesně začíná a končí.
+Vyberte tuto možnost, pokud je zřejmé, že je v nahrávce hlavní řečník a další překrývající se řeč, která není jen pozadí, ale nejste schopni rozumně určit, kde přesně začíná a končí.
 
-V tomto případě se ukládá jen segmentová informace, bez spanů.
+V tomto případě se ukládá jen informace, že v nahrávce je překryv bez spanů (vyznačených úseků).
 
 ### 3. Overlap existuje a lze ho lokalizovat
 
@@ -44,13 +44,16 @@ V tomto případě přidejte jeden nebo více **spanů** tak, že je označíte 
 - **řeč je částečně srozumitelná**,
 - **řeč je dobře srozumitelná**.
 
-U každého spanu můžete také vyplnit text, pokud jste něčemu rozuměli. Rozhraní umožňuje označit span a průběžně ho upravovat tak, abyste pokryli celý úsek. Rozhraní také umožňuje označený span zacyklit a zpomalit, aby šel text jednodušeji rozpoznat.
+U každého spanu můžete také vyplnit text, který říkal ten druhý řečník, pokud jste rozuměli. Rozhraní umožňuje označit span, opakovaně (i dokolečka) si jej poslouchat a průběžně ho upravovat tak, abyste pokryli celý úsek.
+
+Pro lepší srozumitelnost rozhraní také umožňuje přehrávání zpomalit.
 
 ## Jak psát text
 
 Text pište jen tehdy, když si jste tím, co slyšíte, alespoň částečně jistí. Není nutné doplňovat celou větu za každou cenu. Pokud rozumíte jen části, zapište jen tu část.
 
-Pokud řeči nerozumíte, text nechte prázdný. Pokud slyšíte jen část slova, není potřeba domýšlet celé slovo. V takovém případě napište například tři tečky, že se řeč usekla.
+
+Pokud řeči nerozumíte, jen vyznačte úsek a text nechte prázdný. Pokud slyšíte jen část slova, není potřeba domýšlet celé slovo. V takovém případě napište například tři tečky, že se řeč usekla.
 
 ## Co se považuje za pozitivní případ
 
@@ -63,8 +66,14 @@ Pro tuto úlohu jsou **pozitivní** tyto dva případy:
 ## Důležité zásady
 
 - Neoznačujte jako overlap běžný hluk na pozadí.
-- Neoznačujte jako overlap každou vzdálenou nebo neurčitou řeč v davu.
+- Neoznačujte jako overlap každou vzdálenou nebo neurčitou řeč v davu, jde nám o překryv řečníků, který “stojí za rozplétání”.
 - Pokud si nejste jistí přesnými hranicemi, označte span přibližně, ale jen tehdy, když opravdu slyšíte dalšího mluvčího.
+
+## Přerušení práce
+
+- práci můžete přerušit kdykoli po uložení nějakého úseku (tj. po stisku tlačítka Submit)
+- okno prohlížeče je při delším přerušení lepší zavřít a později otevřít nové
+- zapomenete-li starší okno otevřené, neanotujte v něm dále, ale zavřete jej (a otevřte si nové)
 
 ## Praktické doporučení
 
