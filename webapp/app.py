@@ -3,6 +3,7 @@ import random
 import secrets
 import csv
 import io
+import subprocess
 
 from flask import Flask, request, jsonify, session, send_from_directory, send_file, Response
 from functools import wraps
@@ -903,6 +904,19 @@ def auto_export():
             })
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
+
+        # Auto-commit export files to git
+        try:
+            subprocess.run(
+                ["git", "add", "annotations_export.tsv", "annotations_export.json"],
+                cwd=EXPORT_DIR, capture_output=True, timeout=10
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "auto: update annotation exports", "--no-verify"],
+                cwd=EXPORT_DIR, capture_output=True, timeout=10
+            )
+        except Exception:
+            pass  # git not available or not a repo — skip silently
     except Exception:
         # Auto-export is best-effort; don't break annotation flow
         pass
