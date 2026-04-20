@@ -14,6 +14,7 @@ app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), ".."
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 AUDIO_DIR = os.path.join(os.path.dirname(__file__), "..", "selected_audios")
+EXPORT_DIR = os.environ.get("EXPORT_DIR", os.path.join(os.path.dirname(__file__), ".."))
 
 TUTORIAL_COUNT = 5
 CALIBRATION_COUNT = 5
@@ -475,6 +476,7 @@ def submit_task():
     db.execute("UPDATE users SET current_sample_id = NULL WHERE id = ?", (user_id,))
     db.commit()
     db.close()
+    auto_export()
     return jsonify({"result": "accepted"})
 
 
@@ -835,6 +837,75 @@ def admin_pick_for_onboarding():
     db.commit()
     db.close()
     return jsonify({"created": created, "count": len(created)})
+
+
+def auto_export():
+    """Automatically write annotations_export.tsv and annotations_export.json to EXPORT_DIR."""
+    try:
+        db = get_db()
+        rows = db.execute("""
+            SELECT a.id as annotation_id, a.sample_id, a.user_id, a.label, a.annotation_data,
+                   a.status, a.created_at,
+                   s.sample_type, s.audio_path, s.recognized_text, s.is_closed,
+                   s.accepted_annotation_count, s.queue_type,
+                   u.display_name
+            FROM annotations a
+            JOIN samples s ON a.sample_id = s.id
+            JOIN users u ON a.user_id = u.id
+            WHERE s.sample_type = 'production'
+            ORDER BY s.id, a.created_at
+        """).fetchall()
+        db.close()
+
+        # TSV
+        tsv_path = os.path.join(EXPORT_DIR, "annotations_export.tsv")
+        with open(tsv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerow([
+                "annotation_id", "sample_id", "sample_type", "audio_path", "recognized_text",
+                "user_id", "display_name", "label", "ui_choice",
+                "span_count", "spans_json", "status",
+                "is_closed", "accepted_annotation_count", "queue_type", "created_at"
+            ])
+            for r in rows:
+                ad = json.loads(r["annotation_data"])
+                spans = ad.get("spans", [])
+                writer.writerow([
+                    r["annotation_id"], r["sample_id"], r["sample_type"], r["audio_path"],
+                    r["recognized_text"] or "",
+                    r["user_id"], r["display_name"], r["label"], ad.get("ui_choice", ""),
+                    len(spans), json.dumps(spans, ensure_ascii=False) if spans else "",
+                    r["status"], r["is_closed"], r["accepted_annotation_count"],
+                    r["queue_type"] or "", r["created_at"]
+                ])
+
+        # JSON
+        json_path = os.path.join(EXPORT_DIR, "annotations_export.json")
+        result = []
+        for r in rows:
+            ad = json.loads(r["annotation_data"])
+            result.append({
+                "annotation_id": r["annotation_id"],
+                "sample_id": r["sample_id"],
+                "sample_type": r["sample_type"],
+                "audio_path": r["audio_path"],
+                "recognized_text": r["recognized_text"],
+                "user_id": r["user_id"],
+                "display_name": r["display_name"],
+                "label": r["label"],
+                "ui_choice": ad.get("ui_choice"),
+                "spans": ad.get("spans", []),
+                "status": r["status"],
+                "is_closed": bool(r["is_closed"]),
+                "accepted_annotation_count": r["accepted_annotation_count"],
+                "queue_type": r["queue_type"],
+                "created_at": r["created_at"],
+            })
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+    except Exception:
+        # Auto-export is best-effort; don't break annotation flow
+        pass
 
 
 @app.route("/api/admin/export")
