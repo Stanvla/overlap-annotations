@@ -206,3 +206,11 @@ Chronological log of all changes made to the application.
 - Updated backend audio URL generation in `webapp/app.py` to use Flask `url_for(...)` and enabled Werkzeug `ProxyFix(..., x_prefix=1)` so forwarded prefixes are reflected in JSON responses
 - Added a regression test covering `X-Forwarded-Prefix` handling for backend-generated audio URLs
 - Verified the fix with `pytest` (`80 passed`) and a local browser smoke test using a temporary reverse proxy mounted at `/speech-overlaps`
+
+### Tutorial/calibration reveal-state and span-reset fixes
+- Fixed the shared annotation screen so tutorial feedback now switches into a read-only review state after the golden answer is revealed
+- Disabled further edits and removed the ability to resubmit the same tutorial example after reveal; the only remaining forward action is to continue to the next example
+- Stopped rendering golden/reference spans through the editable user-span state; they now live in a separate read-only waveform layer with their own preview buttons
+- Fully reset editable span state and DOM between tutorial/calibration examples so ghost spans cannot leak into later items
+- Added boundary clamping for whole-span dragging so moving a span to the waveform edge preserves its width instead of clipping it
+- Verified the change with `pytest` (`80 passed`) and a local browser smoke test covering tutorial reveal lock, clean next-example state, and boundary clamp behavior

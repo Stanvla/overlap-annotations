@@ -31,6 +31,8 @@ Each created span has two buttons:
 
 Implementation detail: span preview uses WaveSurfer's bounded `play(start, end)` playback instead of relying on the current playhead position. Playback-state updates only change the span control buttons, so in-progress text typed into the span editor is not lost while previewing audio.
 
+Dragging behavior: when an existing editable span is moved horizontally to the beginning or end of the waveform, movement is clamped at the boundary while preserving the span width. A boundary hit does not collapse or clip the region.
+
 ### Time Display
 
 A real-time display shows `current / total` duration in `M:SS.mm` format, updated continuously during playback.
@@ -43,9 +45,13 @@ A real-time display shows `current / total` duration in `M:SS.mm` format, update
 
 After submitting a tutorial annotation, the correct answer is shown with:
 
+- The shared annotation screen switches into a **read-only review state**: choice buttons are disabled, the editable span editor is hidden, and the original example cannot be submitted again
+- The user's submitted answer is shown as static feedback text rather than remaining live in the editable span state
 - Golden spans rendered as **green regions** (`rgba(34, 197, 94, 0.25)`) on the existing waveform
 - **Play/stop buttons** for each golden span: `▶ Span 1 (1.42s–2.87s)` — clicking from any cursor position plays that exact region once; while active, the button changes to stop and can cancel the preview immediately
 - Text details: span times, intelligibility level, and transcribed text (if any)
+
+Implementation detail: tutorial golden/reference spans are rendered as a separate read-only region layer. They are not merged into the editable `spans` array, which prevents ghost spans from leaking into later examples.
 
 This allows the annotator to listen to the correct spans and understand the expected annotation.
 
@@ -60,6 +66,8 @@ When calibration is complete, each sample in the results summary has:
 - Full span detail text (times, intelligibility, transcript)
 
 Waveform instances are cleaned up when navigating away.
+
+The editable annotation state is fully reset whenever the next tutorial or calibration sample is loaded, so reference spans from a previous reveal cannot persist as broken "ghost" regions.
 
 ---
 
@@ -216,6 +224,7 @@ See [deployment.md](deployment.md) for full deployment instructions.
 | Progress bar | Visual progress indicator for tutorial/calibration: "Tutorial 2 / 5" with fill bar |
 | Recognized text | Transcript shown above the waveform during annotation for context |
 | Submit button state | Disabled until a choice is selected; disabled during submission to prevent double-submit |
+| Tutorial reveal lock | After the correct answer is revealed, the annotation screen becomes read-only and only the Next/continue action remains |
 | Session persistence | Page load checks for existing session and auto-restores the user's state |
 | Admin visibility | Admin button shown only for admin users |
 | Production annotation counter | Displayed next to the user's name as "(X annotated)". Counts only accepted production annotations (excludes tutorial/calibration). Updates live after each submission. Also shown in the admin user table as an "Annotated" column |

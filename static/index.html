@@ -154,6 +154,16 @@ input[type="text"], input[type="number"], textarea {
   font-weight: 600;
 }
 
+.choice-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.choice-btn:disabled:hover {
+  border-color: var(--border);
+  background: var(--card);
+}
+
 /* Spans editor */
 .spans-section {
   margin-top: 16px;
@@ -682,7 +692,11 @@ let wsRegions = null;
 let spanIdCounter = 0;
 let activeSpanPlay = null; // { idx, looping, playing }
 let playbackSpeed = 1;
+let disableUserDragSelection = null;
+let annotationLocked = false;
+let referenceRegionRefs = [];
 const segmentButtonPlayback = new WeakMap();
+const editableRegionState = new WeakMap();
 
 const REGION_COLORS = [
   'rgba(37, 99, 235, 0.25)',
@@ -732,6 +746,191 @@ async function api(url, opts = {}) {
   const data = await res.json();
   if (!res.ok) throw { status: res.status, ...data };
   return data;
+}
+
+function roundSpanTime(time) {
+  return Math.round(time * 100) / 100;
+}
+
+function getEditableRegionState(region) {
+  let state = editableRegionState.get(region);
+  if (!state) {
+    state = {
+      stableStart: region.start,
+      stableEnd: region.end,
+      updateOrigin: null,
+      applyingClamp: false,
+    };
+    editableRegionState.set(region, state);
+  }
+  return state;
+}
+
+function registerEditableRegion(region) {
+  const state = getEditableRegionState(region);
+  state.stableStart = region.start;
+  state.stableEnd = region.end;
+  region.on('remove', () => editableRegionState.delete(region));
+}
+
+function clearReferenceRegions() {
+  referenceRegionRefs.forEach((region) => {
+    try {
+      region.remove();
+    } catch (err) {
+      console.warn('reference region cleanup failed', err);
+    }
+  });
+  referenceRegionRefs = [];
+}
+
+function clearEditableSpans({ stopPlayback = false } = {}) {
+  if (stopPlayback && wavesurfer && wavesurfer.isPlaying()) {
+    wavesurfer.pause();
+  }
+
+  spans.forEach((span) => {
+    if (!span.regionRef) return;
+    try {
+      span.regionRef.remove();
+    } catch (err) {
+      console.warn('editable span cleanup failed', err);
+    }
+  });
+
+  spans = [];
+  spanIdCounter = 0;
+  activeSpanPlay = null;
+  renderSpans();
+}
+
+function setUserDragSelectionEnabled(enabled) {
+  if (!wsRegions) return;
+
+  if (enabled) {
+    if (!disableUserDragSelection) {
+      disableUserDragSelection = wsRegions.enableDragSelection({
+        color: REGION_COLORS[0],
+      });
+    }
+    return;
+  }
+
+  if (disableUserDragSelection) {
+    disableUserDragSelection();
+    disableUserDragSelection = null;
+  }
+}
+
+function updateWaveformHint() {
+  const hint = document.getElementById('waveform-hint');
+  if (!hint) return;
+
+  hint.textContent = annotationLocked
+    ? 'Review mode: this example is read-only after the correct answer is revealed.'
+    : 'Click and drag on the waveform above to mark overlap regions.';
+}
+
+function updateAnnotationEditability() {
+  document.querySelectorAll('.choice-btn').forEach((button) => {
+    button.disabled = annotationLocked;
+  });
+
+  document.getElementById('spans-editor').classList.toggle(
+    'hidden',
+    annotationLocked || selectedChoice !== 'positive_localizable'
+  );
+
+  const submitBtn = document.getElementById('submit-btn');
+  submitBtn.classList.toggle('hidden', annotationLocked);
+  submitBtn.disabled = annotationLocked || submitting || !selectedChoice;
+
+  updateWaveformHint();
+  setUserDragSelectionEnabled(!annotationLocked && selectedChoice === 'positive_localizable');
+
+  spans.forEach((span) => {
+    if (!span.regionRef) return;
+    span.regionRef.setOptions({ drag: !annotationLocked, resize: !annotationLocked });
+  });
+}
+
+function setAnnotationLocked(locked) {
+  annotationLocked = locked;
+  updateAnnotationEditability();
+}
+
+function renderReferenceSpans(referenceSpans, buttonContainer) {
+  clearReferenceRegions();
+  if (!wavesurfer || !wsRegions || !referenceSpans || referenceSpans.length === 0) return;
+
+  const spanButtons = [];
+  const renderButtons = () => {
+    spanButtons.forEach(({ button, key, label }) => {
+      updateSegmentButton(button, isSegmentButtonActive(wavesurfer, key), label);
+    });
+  };
+  setSegmentButtonRenderer(wavesurfer, renderButtons);
+
+  referenceSpans.forEach((sp, i) => {
+    const txt = sp.text || sp.transcribed_text || '';
+    const label = `Golden ${i + 1}` + (txt ? ': ' + txt : '');
+    const region = wsRegions.addRegion({
+      id: `reference-${Date.now()}-${i}`,
+      start: sp.start,
+      end: sp.end,
+      color: 'rgba(34, 197, 94, 0.25)',
+      drag: false,
+      resize: false,
+      content: label,
+    });
+    referenceRegionRefs.push(region);
+
+    if (buttonContainer) {
+      const button = document.createElement('button');
+      button.className = 'play-span-btn';
+      const buttonLabel = `Span ${i + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
+      const key = `reference-${i}`;
+      button.onclick = () => toggleSegmentButtonPlayback(wavesurfer, key, sp.start, sp.end);
+      spanButtons.push({ button, key, label: buttonLabel });
+      buttonContainer.appendChild(button);
+    }
+  });
+
+  renderButtons();
+}
+
+function clampDraggedRegion(region) {
+  const state = getEditableRegionState(region);
+  if (!wavesurfer || !state.updateOrigin || state.updateOrigin.side !== 'move') {
+    return false;
+  }
+
+  const duration = wavesurfer.getDuration();
+  const originalWidth = state.updateOrigin.end - state.updateOrigin.start;
+  const currentWidth = region.end - region.start;
+  const boundaryTolerance = 0.02;
+
+  if (duration <= 0 || originalWidth <= 0 || currentWidth >= originalWidth - boundaryTolerance) {
+    return false;
+  }
+
+  let nextStart = region.start;
+  let nextEnd = region.end;
+  if (region.start <= boundaryTolerance) {
+    nextStart = 0;
+    nextEnd = Math.min(duration, originalWidth);
+  } else if (region.end >= duration - boundaryTolerance) {
+    nextEnd = duration;
+    nextStart = Math.max(0, duration - originalWidth);
+  }
+
+  if (Math.abs(nextStart - region.start) < 0.005 && Math.abs(nextEnd - region.end) < 0.005) {
+    return false;
+  }
+
+  state.applyingClamp = true;
+  region.setOptions({ start: nextStart, end: nextEnd });
+  return true;
 }
 
 // ---- Auth ----
@@ -829,15 +1028,14 @@ async function loadTask() {
 
 function resetAnnotationUI() {
   selectedChoice = null;
-  spans = [];
-  spanIdCounter = 0;
   submitting = false;
-  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('submit-btn').classList.remove('hidden');
   document.getElementById('feedback-area').classList.add('hidden');
   document.getElementById('feedback-area').innerHTML = '';
-  document.getElementById('spans-editor').classList.add('hidden');
   document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));
-  if (wsRegions) wsRegions.clearRegions();
+  clearReferenceRegions();
+  clearEditableSpans({ stopPlayback: true });
+  setAnnotationLocked(false);
 }
 
 function renderAnnotationScreen(data) {
@@ -874,6 +1072,9 @@ function initWaveform(audioUrl) {
     wavesurfer = null;
     wsRegions = null;
   }
+
+  disableUserDragSelection = null;
+  referenceRegionRefs = [];
 
   wsRegions = WaveSurfer.Regions.create();
 
@@ -924,13 +1125,13 @@ function initWaveform(audioUrl) {
     handleActiveSpanPause();
   });
 
-  // Region creation — only active when option 3 is selected
-  wsRegions.enableDragSelection({
-    color: REGION_COLORS[0],
-  });
+  updateAnnotationEditability();
 
   wsRegions.on('region-created', (region) => {
-    if (selectedChoice !== 'positive_localizable') {
+    if (String(region.id || '').startsWith('reference-')) {
+      return;
+    }
+    if (annotationLocked || selectedChoice !== 'positive_localizable') {
       region.remove();
       return;
     }
@@ -938,10 +1139,11 @@ function initWaveform(audioUrl) {
     const colorIdx = spans.length % REGION_COLORS.length;
     region.setOptions({ color: REGION_COLORS[colorIdx] });
     region.element.title = `Span ${sid}`;
+    registerEditableRegion(region);
     spans.push({
       id: sid,
-      start: Math.round(region.start * 100) / 100,
-      end: Math.round(region.end * 100) / 100,
+      start: roundSpanTime(region.start),
+      end: roundSpanTime(region.end),
       intelligibility: 'full',
       text: '',
       regionRef: region,
@@ -949,13 +1151,40 @@ function initWaveform(audioUrl) {
     renderSpans();
   });
 
+  wsRegions.on('region-update', (region, side) => {
+    const span = spans.find(s => s.regionRef === region);
+    if (!span) return;
+
+    const state = getEditableRegionState(region);
+    if (!state.updateOrigin) {
+      state.updateOrigin = {
+        start: state.stableStart,
+        end: state.stableEnd,
+        side: side || 'move',
+      };
+    } else if (side) {
+      state.updateOrigin.side = side;
+    }
+  });
+
   wsRegions.on('region-updated', (region) => {
     const span = spans.find(s => s.regionRef === region);
-    if (span) {
-      span.start = Math.round(region.start * 100) / 100;
-      span.end = Math.round(region.end * 100) / 100;
-      renderSpans();
+    if (!span) return;
+
+    const state = getEditableRegionState(region);
+    if (state.applyingClamp) {
+      state.applyingClamp = false;
+    } else if (clampDraggedRegion(region)) {
+      return;
     }
+
+    state.stableStart = region.start;
+    state.stableEnd = region.end;
+    state.updateOrigin = null;
+
+    span.start = roundSpanTime(region.start);
+    span.end = roundSpanTime(region.end);
+    renderSpans();
   });
 }
 
@@ -1134,21 +1363,15 @@ function setSpeed(val) {
 }
 
 function selectChoice(btn) {
+  if (annotationLocked) return;
   document.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
   selectedChoice = btn.dataset.choice;
-
-  // Show/hide spans editor
-  if (selectedChoice === 'positive_localizable') {
-    document.getElementById('spans-editor').classList.remove('hidden');
-  } else {
-    document.getElementById('spans-editor').classList.add('hidden');
-  }
-
-  document.getElementById('submit-btn').disabled = false;
+  updateAnnotationEditability();
 }
 
 function removeSpan(idx) {
+  if (annotationLocked) return;
   const span = spans[idx];
   if (activeSpanPlay && activeSpanPlay.idx === idx) {
     activeSpanPlay = null;
@@ -1166,6 +1389,7 @@ function removeSpan(idx) {
 }
 
 function playSpan(idx) {
+  if (annotationLocked) return;
   const span = spans[idx];
   if (!span || !wavesurfer) return;
 
@@ -1183,6 +1407,7 @@ function playSpan(idx) {
 }
 
 function toggleSpanLoop(idx) {
+  if (annotationLocked) return;
   if (activeSpanPlay && activeSpanPlay.idx === idx && activeSpanPlay.looping) {
     // Disable looping (keep playing but will stop at end)
     activeSpanPlay.looping = false;
@@ -1238,9 +1463,9 @@ function renderSpans() {
 }
 
 async function submitAnnotation() {
-  if (!selectedChoice || submitting) return;
+  if (annotationLocked || !selectedChoice || submitting) return;
   submitting = true;
-  document.getElementById('submit-btn').disabled = true;
+  updateAnnotationEditability();
 
   const payload = {
     ui_choice: selectedChoice,
@@ -1280,7 +1505,7 @@ async function submitAnnotation() {
     console.error('submit error', e);
     alert(e.error || 'Submit failed');
     submitting = false;
-    document.getElementById('submit-btn').disabled = false;
+    updateAnnotationEditability();
   }
 }
 
@@ -1298,6 +1523,8 @@ function renderSpanDetails(annotation) {
 function showTutorialFeedback(golden, userAnswer) {
   const area = document.getElementById('feedback-area');
   area.classList.remove('hidden');
+  submitting = false;
+  setAnnotationLocked(true);
 
   const goldenChoice = golden.ui_choice;
   const userChoice = userAnswer.ui_choice;
@@ -1308,6 +1535,7 @@ function showTutorialFeedback(golden, userAnswer) {
   const isCorrect = goldenLabel === userLabel;
 
   const goldenSpansHtml = renderSpanDetails(golden);
+  const userSpansHtml = renderSpanDetails(userAnswer);
 
   const hasGoldenSpans = golden.spans && golden.spans.length > 0;
 
@@ -1318,45 +1546,20 @@ function showTutorialFeedback(golden, userAnswer) {
         Your answer: <strong>${choiceLabel(userChoice)}</strong><br>
         Correct answer: <strong>${choiceLabel(goldenChoice)}</strong>
       </p>
+      <p class="mt-2 text-sm text-muted">This example is now read-only. Review the correct solution, then continue.</p>
+      ${userSpansHtml ? '<div class="mt-2 text-sm" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Your spans:</strong>' + userSpansHtml + '</div>' : ''}
       ${goldenSpansHtml ? '<div class="mt-2 text-sm" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Correct spans:</strong>' + goldenSpansHtml + '</div>' : ''}
       ${hasGoldenSpans ? '<div id="tutorial-span-btns" class="mt-2" style="display:flex;gap:4px;flex-wrap:wrap;"></div>' : ''}
     </div>
     <button class="btn btn-primary mt-2" onclick="loadTask()">Next</button>
   `;
 
+  clearEditableSpans();
+
   // Show golden spans as green regions on the existing waveform + play buttons
   if (wavesurfer && wsRegions && hasGoldenSpans) {
     const btnContainer = document.getElementById('tutorial-span-btns');
-    const spanButtons = [];
-    const renderButtons = () => {
-      spanButtons.forEach(({ button, key, label }) => {
-        updateSegmentButton(button, isSegmentButtonActive(wavesurfer, key), label);
-      });
-    };
-    setSegmentButtonRenderer(wavesurfer, renderButtons);
-
-    golden.spans.forEach((sp, i) => {
-      const txt = sp.text || sp.transcribed_text || '';
-      const label = `Golden ${i + 1}` + (txt ? ': ' + txt : '');
-      wsRegions.addRegion({
-        start: sp.start,
-        end: sp.end,
-        color: 'rgba(34, 197, 94, 0.25)',
-        drag: false,
-        resize: false,
-        content: label,
-      });
-      // Play button per span
-      const btn = document.createElement('button');
-      btn.className = 'play-span-btn';
-      const btnLabel = `Span ${i + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
-      const key = `tutorial-${i}`;
-      btn.onclick = () => toggleSegmentButtonPlayback(wavesurfer, key, sp.start, sp.end);
-      spanButtons.push({ button: btn, key, label: btnLabel });
-      btnContainer.appendChild(btn);
-    });
-
-    renderButtons();
+    renderReferenceSpans(golden.spans, btnContainer);
   }
 }
 
