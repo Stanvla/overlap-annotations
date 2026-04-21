@@ -7,14 +7,15 @@ import sqlite3
 import mimetypes
 import posixpath
 
-from flask import Flask, request, jsonify, session, send_from_directory, send_file, Response
+from flask import Flask, request, jsonify, session, send_from_directory, send_file, Response, url_for
 from functools import wraps
 import os
-from urllib.parse import quote
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .db import get_db, init_db
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), "..", "static"))
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -53,7 +54,7 @@ def _audio_request_path(audio_path):
 
 
 def _audio_url(audio_path):
-    return f"/audio/{quote(_audio_request_path(audio_path), safe='/')}"
+    return url_for("serve_audio", filename=_audio_request_path(audio_path))
 
 
 def _requested_audio_fs_path(filename):

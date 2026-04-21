@@ -186,6 +186,24 @@ A deployment script that:
 
 Configurable via environment variables: `PORT`, `HOST`, `WORKERS`, `SECRET_KEY`, `EXPORT_DIR`.
 
+### Reverse-Proxy Path Prefix Support
+
+The app now supports being served either:
+
+- at the domain root, e.g. `/`
+- or under a path prefix, e.g. `/speech-overlaps`
+
+Implementation details:
+
+- The frontend derives a normalized app base path from the current page URL and uses a single helper to prefix all API calls, admin export downloads, and audio URLs.
+- This fixes all root-assumed frontend requests such as `/api/login`, `/api/me`, `/api/task/current`, `/api/task/submit`, `/api/rules`, `/api/admin/...`, and audio playback requests.
+- The backend now uses Werkzeug `ProxyFix(..., x_prefix=1)` so requests forwarded by a reverse proxy can carry `X-Forwarded-Prefix`.
+- Backend-generated audio URLs are built with Flask `url_for(...)`, so JSON payloads also respect the forwarded prefix instead of always returning root-based `/audio/...` paths.
+
+Operational requirement:
+
+- If the app is mounted under a subpath in nginx, Apache, or another reverse proxy, that proxy should forward the mount point via `X-Forwarded-Prefix` so backend-generated URLs remain consistent with the public URL structure.
+
 See [deployment.md](deployment.md) for full deployment instructions.
 
 ---

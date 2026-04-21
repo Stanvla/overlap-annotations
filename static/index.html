@@ -693,8 +693,39 @@ const REGION_COLORS = [
 ];
 
 // ---- API helpers ----
+function normalizeAppBasePath(path) {
+  if (!path || path === '/') return '';
+
+  let normalized = path;
+  if (normalized.endsWith('/index.html')) {
+    normalized = normalized.slice(0, -'/index.html'.length);
+  }
+  if (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized === '/' ? '' : normalized;
+}
+
+function detectAppBasePath() {
+  return normalizeAppBasePath(window.location.pathname || '/');
+}
+
+const APP_BASE_PATH = detectAppBasePath();
+
+function resolveAppUrl(path) {
+  if (!path) return APP_BASE_PATH || '/';
+  if (/^(?:[a-z]+:)?\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) {
+    return path;
+  }
+  if (!path.startsWith('/')) return path;
+  if (!APP_BASE_PATH || path === APP_BASE_PATH || path.startsWith(`${APP_BASE_PATH}/`)) {
+    return path;
+  }
+  return `${APP_BASE_PATH}${path}`;
+}
+
 async function api(url, opts = {}) {
-  const res = await fetch(url, {
+  const res = await fetch(resolveAppUrl(url), {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   });
@@ -860,7 +891,7 @@ function initWaveform(audioUrl) {
     plugins: [wsRegions],
   });
 
-  wavesurfer.load(audioUrl);
+  wavesurfer.load(resolveAppUrl(audioUrl));
 
   wavesurfer.on('ready', () => {
     updateTimeDisplay();
@@ -1387,7 +1418,7 @@ function showCalibrationResults(results) {
       plugins: [regions],
     });
     calWaveforms.push(ws);
-    ws.load(r.sample.audio_url);
+    ws.load(resolveAppUrl(r.sample.audio_url));
 
     ws.on('ready', () => {
       if (r.golden && r.golden.spans && r.golden.spans.length > 0) {
@@ -1525,7 +1556,7 @@ function hideAdmin() {
 }
 
 function exportAnnotations(fmt) {
-  window.open(`/api/admin/export?format=${fmt}`, '_blank');
+  window.open(resolveAppUrl(`/api/admin/export?format=${encodeURIComponent(fmt)}`), '_blank');
 }
 
 function adminTab(tab, btn) {
@@ -1622,7 +1653,7 @@ async function loadAdminSamples() {
         <strong>#${s.id}</strong>
         <span class="text-sm text-muted">Order: ${s.sort_order}</span>
       </div>
-      <audio controls src="${s.audio_url}" style="width:100%; margin:8px 0;"></audio>
+      <audio controls src="${resolveAppUrl(s.audio_url)}" style="width:100%; margin:8px 0;"></audio>
       <p class="text-sm">${esc(s.recognized_text || '')}</p>
       <p class="text-sm mt-2">
         Golden: <strong>${s.golden_annotation ? goldenSummary(s.golden_annotation) : '<span style="color:var(--danger)">Not set</span>'}</strong>
@@ -1630,7 +1661,7 @@ async function loadAdminSamples() {
       <div class="mt-2" style="display:flex; gap:4px; flex-wrap:wrap;">
         <button class="btn btn-sm btn-outline" onclick="setGolden(${s.id}, 'negative')">Set: Negative</button>
         <button class="btn btn-sm btn-outline" onclick="setGolden(${s.id}, 'positive_not_localizable')">Set: Positive (not loc.)</button>
-        <button class="btn btn-sm btn-outline" onclick="openGoldenModal(${s.id}, '${s.audio_url}')">Set: Positive (localizable) …</button>
+        <button class="btn btn-sm btn-outline" onclick="openGoldenModal(${s.id}, '${resolveAppUrl(s.audio_url)}')">Set: Positive (localizable) …</button>
         <button class="btn btn-sm btn-danger" onclick="deleteSample(${s.id})" style="margin-left:auto;">Remove</button>
       </div>
     </div>
@@ -1732,7 +1763,7 @@ function initGoldenWaveform(audioUrl) {
     plugins: [goldenRegions],
   });
 
-  goldenWs.load(audioUrl);
+  goldenWs.load(resolveAppUrl(audioUrl));
 
   goldenWs.on('ready', () => updateGoldenTime());
   goldenWs.on('audioprocess', updateGoldenTime);
@@ -1978,7 +2009,7 @@ async function loadQueueSamples(queue) {
       plugins: [regions],
     });
     queueWaveforms.push(ws);
-    ws.load(s.audio_url);
+    ws.load(resolveAppUrl(s.audio_url));
 
     ws.on('ready', () => {
       const spanButtons = [];

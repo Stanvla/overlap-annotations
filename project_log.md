@@ -199,3 +199,10 @@ Chronological log of all changes made to the application.
 - Reused the same deterministic range-preview behavior for tutorial feedback spans, calibration result spans, golden-annotation spans, and admin queue span previews so all segment-preview surfaces behave the same way
 - Kept playback state updates localized to the span controls so in-progress text typed into a span textarea is not lost during preview
 - Verified the change with `pytest` (`79 passed`) and a targeted browser smoke test of span playback/start-stop behavior
+
+### Path-prefix deployment support
+- Fixed frontend URL handling so the app can run both at the domain root and under a reverse-proxy path prefix such as `/speech-overlaps`
+- Added a frontend base-path helper in `static/index.html` and routed all API calls, admin export downloads, and audio requests through it instead of assuming root-based `/api/...` and `/audio/...` paths
+- Updated backend audio URL generation in `webapp/app.py` to use Flask `url_for(...)` and enabled Werkzeug `ProxyFix(..., x_prefix=1)` so forwarded prefixes are reflected in JSON responses
+- Added a regression test covering `X-Forwarded-Prefix` handling for backend-generated audio URLs
+- Verified the fix with `pytest` (`80 passed`) and a local browser smoke test using a temporary reverse proxy mounted at `/speech-overlaps`

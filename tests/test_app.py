@@ -264,6 +264,16 @@ class TestTaskFlow:
         assert resp.status_code == 200
         assert resp.get_json()["sample"]["audio_url"] == "/audio/subdir/test.wav"
 
+    def test_task_audio_url_respects_forwarded_prefix(self, client):
+        _create_user(stage="tutorial")
+        golden = {"ui_choice": "negative", "spans": []}
+        _create_sample("tutorial", audio_path="selected_audios/subdir/test.wav", golden_annotation=golden)
+        _login(client)
+
+        resp = client.get("/api/task/current", headers={"X-Forwarded-Prefix": "/speech-overlaps"})
+        assert resp.status_code == 200
+        assert resp.get_json()["sample"]["audio_url"] == "/speech-overlaps/audio/subdir/test.wav"
+
 
 class TestContentEndpoints:
     def test_rules_endpoint_returns_content(self, client):
