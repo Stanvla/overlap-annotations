@@ -680,8 +680,9 @@ let submitting = false;
 let wavesurfer = null;
 let wsRegions = null;
 let spanIdCounter = 0;
-let activeSpanPlay = null; // { idx, looping }
+let activeSpanPlay = null; // { idx, looping, playing }
 let playbackSpeed = 1;
+const segmentButtonPlayback = new WeakMap();
 
 const REGION_COLORS = [
   'rgba(37, 99, 235, 0.25)',
@@ -866,22 +867,8 @@ function initWaveform(audioUrl) {
     wavesurfer.setPlaybackRate(playbackSpeed);
   });
 
-  wavesurfer.on('audioprocess', (time) => {
+  wavesurfer.on('audioprocess', () => {
     updateTimeDisplay();
-    // Auto-stop / loop at span end
-    if (activeSpanPlay !== null) {
-      const span = spans[activeSpanPlay.idx];
-      if (span && time >= span.end) {
-        if (activeSpanPlay.looping) {
-          wavesurfer.setTime(span.start);
-          wavesurfer.play();
-        } else {
-          wavesurfer.pause();
-          wavesurfer.setTime(span.end);
-          activeSpanPlay = null;
-        }
-      }
-    }
   });
   wavesurfer.on('seeking', () => {
     updateTimeDisplay();
@@ -892,6 +879,7 @@ function initWaveform(audioUrl) {
         const cur = wavesurfer.getCurrentTime();
         if (cur < span.start - 0.05 || cur > span.end + 0.05) {
           activeSpanPlay = null;
+          syncSpanPlaybackButtons();
         }
       }
     }
@@ -902,6 +890,7 @@ function initWaveform(audioUrl) {
   });
   wavesurfer.on('pause', () => {
     document.getElementById('play-btn').textContent = '▶ Play';
+    handleActiveSpanPause();
   });
 
   // Region creation — only active when option 3 is selected
@@ -952,9 +941,157 @@ function fmtTime(sec) {
   return `${m}:${s < 10 ? '0' : ''}${s.toFixed(2)}`;
 }
 
+function ensureSegmentButtonPlayback(waveform) {
+  let state = segmentButtonPlayback.get(waveform);
+  if (!state) {
+    state = { activeKey: null, start: null, end: null, renderButtons: null, initialized: false };
+    segmentButtonPlayback.set(waveform, state);
+  }
+  if (state.initialized) return state;
+
+  waveform.on('pause', () => {
+    const current = segmentButtonPlayback.get(waveform);
+    if (!current) return;
+    const activeEnd = current.end;
+    const reachedEnd = current.activeKey !== null && activeEnd !== null && waveform.getCurrentTime() >= activeEnd - 0.02;
+
+    current.activeKey = null;
+    current.start = null;
+    current.end = null;
+
+    if (reachedEnd) {
+      waveform.setTime(activeEnd);
+    }
+    if (typeof current.renderButtons === 'function') {
+      current.renderButtons();
+    }
+  });
+
+  state.initialized = true;
+  return state;
+}
+
+function setSegmentButtonRenderer(waveform, renderButtons) {
+  const state = ensureSegmentButtonPlayback(waveform);
+  state.renderButtons = renderButtons;
+}
+
+function isSegmentButtonActive(waveform, key) {
+  const state = waveform ? segmentButtonPlayback.get(waveform) : null;
+  return !!(state && state.activeKey === key);
+}
+
+function toggleSegmentButtonPlayback(waveform, key, start, end) {
+  if (!waveform) return;
+
+  const state = ensureSegmentButtonPlayback(waveform);
+  if (state.activeKey === key) {
+    state.activeKey = null;
+    state.start = null;
+    state.end = null;
+    waveform.pause();
+    waveform.setTime(start);
+    if (typeof state.renderButtons === 'function') {
+      state.renderButtons();
+    }
+    return;
+  }
+
+  state.activeKey = key;
+  state.start = start;
+  state.end = end;
+  if (typeof state.renderButtons === 'function') {
+    state.renderButtons();
+  }
+
+  waveform.play(start, end).catch((err) => {
+    console.error('segment play failed', err);
+    const current = segmentButtonPlayback.get(waveform);
+    if (!current || current.activeKey !== key) return;
+    current.activeKey = null;
+    current.start = null;
+    current.end = null;
+    if (typeof current.renderButtons === 'function') {
+      current.renderButtons();
+    }
+  });
+}
+
+function updateSegmentButton(button, active, label) {
+  button.textContent = `${active ? '⏹' : '▶'} ${label}`;
+  button.title = active ? 'Stop this span' : 'Play this span';
+}
+
+function isSpanPlaying(idx) {
+  return !!(activeSpanPlay && activeSpanPlay.idx === idx && activeSpanPlay.playing);
+}
+
+function syncSpanPlaybackButtons() {
+  const list = document.getElementById('spans-list');
+  if (!list) return;
+
+  list.querySelectorAll('.span-play-btn').forEach((button) => {
+    const idx = Number(button.dataset.spanIdx);
+    const spanIsPlaying = isSpanPlaying(idx);
+    button.textContent = spanIsPlaying ? '⏹' : '▶';
+    button.title = spanIsPlaying ? 'Stop this span' : 'Play this span';
+  });
+
+  list.querySelectorAll('.span-loop-btn').forEach((button) => {
+    const idx = Number(button.dataset.spanIdx);
+    button.classList.toggle('active', !!(activeSpanPlay && activeSpanPlay.idx === idx && activeSpanPlay.looping));
+  });
+}
+
+function startActiveSpanPlayback() {
+  if (!wavesurfer || !activeSpanPlay) return;
+
+  const spanIdx = activeSpanPlay.idx;
+  const span = spans[spanIdx];
+  if (!span) {
+    activeSpanPlay = null;
+    syncSpanPlaybackButtons();
+    return;
+  }
+
+  activeSpanPlay.playing = true;
+  syncSpanPlaybackButtons();
+  wavesurfer.play(span.start, span.end).catch((err) => {
+    console.error('span play failed', err);
+    if (activeSpanPlay && activeSpanPlay.idx === spanIdx) {
+      activeSpanPlay = null;
+      syncSpanPlaybackButtons();
+    }
+  });
+}
+
+function handleActiveSpanPause() {
+  if (!activeSpanPlay || !wavesurfer) return;
+
+  const span = spans[activeSpanPlay.idx];
+  if (!span) {
+    activeSpanPlay = null;
+    syncSpanPlaybackButtons();
+    return;
+  }
+
+  const reachedEnd = wavesurfer.getCurrentTime() >= span.end - 0.02;
+  if (reachedEnd && activeSpanPlay.looping) {
+    startActiveSpanPlayback();
+    return;
+  }
+  if (reachedEnd) {
+    wavesurfer.setTime(span.end);
+  }
+
+  activeSpanPlay = null;
+  syncSpanPlaybackButtons();
+}
+
 function togglePlay() {
   if (!wavesurfer) return;
   activeSpanPlay = null;
+  syncSpanPlaybackButtons();
   wavesurfer.playPause();
 }
 
@@ -982,6 +1119,14 @@ function selectChoice(btn) {
 
 function removeSpan(idx) {
   const span = spans[idx];
+  if (activeSpanPlay && activeSpanPlay.idx === idx) {
+    activeSpanPlay = null;
+    if (wavesurfer) {
+      wavesurfer.pause();
+    }
+  } else if (activeSpanPlay && activeSpanPlay.idx > idx) {
+    activeSpanPlay.idx -= 1;
+  }
   if (span && span.regionRef) {
     span.regionRef.remove();
   }
@@ -992,25 +1137,33 @@ function removeSpan(idx) {
 function playSpan(idx) {
   const span = spans[idx];
   if (!span || !wavesurfer) return;
-  const looping = activeSpanPlay && activeSpanPlay.idx === idx ? activeSpanPlay.looping : false;
-  activeSpanPlay = { idx: idx, looping: looping };
-  wavesurfer.setTime(span.start);
-  wavesurfer.play();
+
+  if (isSpanPlaying(idx)) {
+    activeSpanPlay = null;
+    wavesurfer.pause();
+    wavesurfer.setTime(span.start);
+    syncSpanPlaybackButtons();
+    return;
+  }
+
+  const looping = !!(activeSpanPlay && activeSpanPlay.idx === idx && activeSpanPlay.looping);
+  activeSpanPlay = { idx: idx, looping: looping, playing: true };
+  startActiveSpanPlayback();
 }
 
 function toggleSpanLoop(idx) {
   if (activeSpanPlay && activeSpanPlay.idx === idx && activeSpanPlay.looping) {
     // Disable looping (keep playing but will stop at end)
     activeSpanPlay.looping = false;
-    renderSpans();
+    syncSpanPlaybackButtons();
   } else {
     // Enable looping for this span
     if (!activeSpanPlay || activeSpanPlay.idx !== idx) {
-      activeSpanPlay = { idx: idx, looping: true };
+      activeSpanPlay = { idx: idx, looping: true, playing: false };
     } else {
       activeSpanPlay.looping = true;
     }
-    renderSpans();
+    syncSpanPlaybackButtons();
   }
 }
 
@@ -1020,15 +1173,17 @@ function renderSpans() {
     list.innerHTML = '';
     return;
   }
-  list.innerHTML = spans.map((s, i) => `
+  list.innerHTML = spans.map((s, i) => {
+    const spanIsPlaying = isSpanPlaying(i);
+    return `
     <div class="span-item" style="border-left-color: ${REGION_COLORS[i % REGION_COLORS.length].replace(/[\d.]+\)$/, '0.8)')}">
       <div class="span-header">
         <span><strong>Span ${i + 1}</strong>
           <span class="span-times">${s.start.toFixed(2)}s — ${s.end.toFixed(2)}s (${(s.end - s.start).toFixed(2)}s)</span>
         </span>
         <span style="display:flex; gap:4px; align-items:center;">
-          <button class="btn btn-sm btn-outline" onclick="playSpan(${i})" title="Play this span">▶</button>
-          <button class="loop-toggle ${activeSpanPlay && activeSpanPlay.idx === i && activeSpanPlay.looping ? 'active' : ''}" onclick="toggleSpanLoop(${i})" title="Loop this span">🔁 Loop</button>
+          <button class="btn btn-sm btn-outline span-play-btn" data-span-idx="${i}" onclick="playSpan(${i})" title="${spanIsPlaying ? 'Stop this span' : 'Play this span'}">${spanIsPlaying ? '⏹' : '▶'}</button>
+          <button class="loop-toggle span-loop-btn ${activeSpanPlay && activeSpanPlay.idx === i && activeSpanPlay.looping ? 'active' : ''}" data-span-idx="${i}" onclick="toggleSpanLoop(${i})" title="Loop this span">🔁 Loop</button>
           <button class="btn btn-sm btn-danger" onclick="removeSpan(${i})">✕</button>
         </span>
       </div>
@@ -1047,7 +1202,8 @@ function renderSpans() {
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 async function submitAnnotation() {
@@ -1140,6 +1296,14 @@ function showTutorialFeedback(golden, userAnswer) {
   // Show golden spans as green regions on the existing waveform + play buttons
   if (wavesurfer && wsRegions && hasGoldenSpans) {
     const btnContainer = document.getElementById('tutorial-span-btns');
+    const spanButtons = [];
+    const renderButtons = () => {
+      spanButtons.forEach(({ button, key, label }) => {
+        updateSegmentButton(button, isSegmentButtonActive(wavesurfer, key), label);
+      });
+    };
+    setSegmentButtonRenderer(wavesurfer, renderButtons);
+
     golden.spans.forEach((sp, i) => {
       const txt = sp.text || sp.transcribed_text || '';
       const label = `Golden ${i + 1}` + (txt ? ': ' + txt : '');
@@ -1154,20 +1318,14 @@ function showTutorialFeedback(golden, userAnswer) {
       // Play button per span
       const btn = document.createElement('button');
       btn.className = 'play-span-btn';
-      btn.textContent = `▶ Span ${i + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
-      btn.onclick = () => {
-        wavesurfer.setTime(sp.start);
-        wavesurfer.play();
-        const onProcess = (time) => {
-          if (time >= sp.end) {
-            wavesurfer.pause();
-            wavesurfer.un('audioprocess', onProcess);
-          }
-        };
-        wavesurfer.on('audioprocess', onProcess);
-      };
+      const btnLabel = `Span ${i + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
+      const key = `tutorial-${i}`;
+      btn.onclick = () => toggleSegmentButtonPlayback(wavesurfer, key, sp.start, sp.end);
+      spanButtons.push({ button: btn, key, label: btnLabel });
       btnContainer.appendChild(btn);
     });
+
+    renderButtons();
   }
 }
 
@@ -1234,6 +1392,14 @@ function showCalibrationResults(results) {
     ws.on('ready', () => {
       if (r.golden && r.golden.spans && r.golden.spans.length > 0) {
         const btnContainer = document.getElementById(`cal-span-btns-${i}`);
+        const spanButtons = [];
+        const renderButtons = () => {
+          spanButtons.forEach(({ button, key, label }) => {
+            updateSegmentButton(button, isSegmentButtonActive(ws, key), label);
+          });
+        };
+        setSegmentButtonRenderer(ws, renderButtons);
+
         r.golden.spans.forEach((sp, si) => {
           const txt = sp.text || sp.transcribed_text || '';
           const label = `Span ${si + 1}` + (txt ? ': ' + txt : '');
@@ -1249,22 +1415,15 @@ function showCalibrationResults(results) {
           if (btnContainer) {
             const btn = document.createElement('button');
             btn.className = 'play-span-btn';
-            btn.textContent = `▶ Span ${si + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
-            btn.onclick = () => {
-              ws.setTime(sp.start);
-              ws.play();
-              // Auto-stop at span end
-              const onProcess = (time) => {
-                if (time >= sp.end) {
-                  ws.pause();
-                  ws.un('audioprocess', onProcess);
-                }
-              };
-              ws.on('audioprocess', onProcess);
-            };
+            const btnLabel = `Span ${si + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
+            const key = `cal-${si}`;
+            btn.onclick = () => toggleSegmentButtonPlayback(ws, key, sp.start, sp.end);
+            spanButtons.push({ button: btn, key, label: btnLabel });
             btnContainer.appendChild(btn);
           }
         });
+
+        renderButtons();
       }
     });
   });
@@ -1580,6 +1739,7 @@ function initGoldenWaveform(audioUrl) {
   goldenWs.on('seeking', updateGoldenTime);
   goldenWs.on('play', () => { document.getElementById('golden-play-btn').textContent = '\u23f8 Pause'; });
   goldenWs.on('pause', () => { document.getElementById('golden-play-btn').textContent = '\u25b6 Play'; });
+  setSegmentButtonRenderer(goldenWs, renderGoldenSpans);
 
   goldenRegions.enableDragSelection({ color: REGION_COLORS[0] });
 
@@ -1622,10 +1782,8 @@ function goldenSetSpeed(val) {
 
 function goldenPlaySpan(idx) {
   const span = goldenSpans[idx];
-  if (span && goldenWs) {
-    goldenWs.setTime(span.start);
-    goldenWs.play();
-  }
+  if (!span || !goldenWs) return;
+  toggleSegmentButtonPlayback(goldenWs, idx, span.start, span.end);
 }
 
 function goldenRemoveSpan(idx) {
@@ -1641,14 +1799,16 @@ function renderGoldenSpans() {
     list.innerHTML = '<p class="text-sm text-muted">No spans yet. Drag on the waveform to create one.</p>';
     return;
   }
-  list.innerHTML = goldenSpans.map((s, i) => `
+  list.innerHTML = goldenSpans.map((s, i) => {
+    const spanIsPlaying = isSegmentButtonActive(goldenWs, i);
+    return `
     <div class="span-item" style="border-left-color: ${REGION_COLORS[i % REGION_COLORS.length].replace(/[\d.]+\)$/, '0.8)')}">
       <div class="span-header">
         <span><strong>Span ${i + 1}</strong>
           <span class="span-times">${s.start.toFixed(2)}s \u2014 ${s.end.toFixed(2)}s (${(s.end - s.start).toFixed(2)}s)</span>
         </span>
         <span style="display:flex; gap:4px; align-items:center;">
-          <button class="btn btn-sm btn-outline" onclick="goldenPlaySpan(${i})" title="Play">\u25b6</button>
+          <button class="btn btn-sm btn-outline" onclick="goldenPlaySpan(${i})" title="${spanIsPlaying ? 'Stop this span' : 'Play this span'}">${spanIsPlaying ? '⏹' : '\u25b6'}</button>
           <button class="btn btn-sm btn-danger" onclick="goldenRemoveSpan(${i})">\u2715</button>
         </span>
       </div>
@@ -1667,7 +1827,8 @@ function renderGoldenSpans() {
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 async function saveGoldenAnnotation() {
@@ -1820,6 +1981,14 @@ async function loadQueueSamples(queue) {
     ws.load(s.audio_url);
 
     ws.on('ready', () => {
+      const spanButtons = [];
+      const renderButtons = () => {
+        spanButtons.forEach(({ button, key, label }) => {
+          updateSegmentButton(button, isSegmentButtonActive(ws, key), label);
+        });
+      };
+      setSegmentButtonRenderer(ws, renderButtons);
+
       s.annotations.forEach((a, ai) => {
         const ad = a.annotation_data;
         const spans = ad.spans || [];
@@ -1841,22 +2010,16 @@ async function loadQueueSamples(queue) {
           if (btnContainer) {
             const btn = document.createElement('button');
             btn.className = 'play-span-btn';
-            btn.textContent = `\u25b6 Span ${spi + 1} (${Number(sp.start).toFixed(1)}s\u2013${Number(sp.end).toFixed(1)}s)`;
-            btn.onclick = () => {
-              ws.setTime(sp.start);
-              ws.play();
-              const onProcess = (time) => {
-                if (time >= sp.end) {
-                  ws.pause();
-                  ws.un('audioprocess', onProcess);
-                }
-              };
-              ws.on('audioprocess', onProcess);
-            };
+            const btnLabel = `Span ${spi + 1} (${Number(sp.start).toFixed(1)}s\u2013${Number(sp.end).toFixed(1)}s)`;
+            const key = `queue-${ai}-${spi}`;
+            btn.onclick = () => toggleSegmentButtonPlayback(ws, key, sp.start, sp.end);
+            spanButtons.push({ button: btn, key, label: btnLabel });
             btnContainer.appendChild(btn);
           }
         });
       });
+
+      renderButtons();
     });
   });
 }

@@ -22,12 +22,14 @@ A speed selector (`0.5×`, `0.75×`, `1×`, `1.25×`, `1.5×`, `2×`) is availab
 - Applies to all playback (full audio, individual spans, loop mode)
 - Persists across samples within the same session
 
-### Span Playback & Loop
+### Span Playback, Stop & Loop
 
 Each created span has two buttons:
 
-- **▶ Play** — plays the span once and auto-stops at the span's end time
+- **▶ Play / ⏹ Stop** — clicking always starts one-shot playback from the span's own start time, regardless of the current main waveform cursor position; while active, the button switches to stop and clicking it again stops immediately and rewinds to the span start
 - **🔁 Loop** — toggles loop mode; when active, playback automatically restarts at the span's start when reaching its end
+
+Implementation detail: span preview uses WaveSurfer's bounded `play(start, end)` playback instead of relying on the current playhead position. Playback-state updates only change the span control buttons, so in-progress text typed into the span editor is not lost while previewing audio.
 
 ### Time Display
 
@@ -42,7 +44,7 @@ A real-time display shows `current / total` duration in `M:SS.mm` format, update
 After submitting a tutorial annotation, the correct answer is shown with:
 
 - Golden spans rendered as **green regions** (`rgba(34, 197, 94, 0.25)`) on the existing waveform
-- **Play buttons** for each golden span: `▶ Span 1 (1.42s–2.87s)` — clicking plays that exact region and auto-stops
+- **Play/stop buttons** for each golden span: `▶ Span 1 (1.42s–2.87s)` — clicking from any cursor position plays that exact region once; while active, the button changes to stop and can cancel the preview immediately
 - Text details: span times, intelligibility level, and transcribed text (if any)
 
 This allows the annotator to listen to the correct spans and understand the expected annotation.
@@ -53,7 +55,7 @@ When calibration is complete, each sample in the results summary has:
 
 - Its own waveform instance (not just an `<audio>` tag)
 - Golden span regions shown as green highlights
-- Play buttons per golden span with auto-stop
+- Play/stop buttons per golden span with deterministic range playback and immediate stop on second click
 - Match/mismatch indicator with color-coded borders (green for match, red for mismatch)
 - Full span detail text (times, intelligibility, transcript)
 
@@ -101,7 +103,7 @@ For "positive, localizable" golden annotations, admins get a dedicated modal wit
 
 - Full waveform with drag-to-create span regions
 - Per-span controls: intelligibility dropdown, transcript text area, delete button
-- Play buttons per span
+- Play/stop buttons per span with exact-range preview
 - Save/Cancel actions
 
 ### Golden Annotation Display in Sample Cards
@@ -124,7 +126,7 @@ The Production tab in the admin panel provides a real-time queue dashboard:
   - **Interactive waveform** (WaveSurfer.js) per sample with all annotation spans rendered as colored regions
   - Each annotator’s spans use a distinct color (blue, red, green, orange, purple) so overlapping annotations are visually distinguishable
   - Region labels showing annotator name, span number, and transcript
-  - **Play buttons** per span — plays the exact time range and auto-stops at span end
+  - **Play/stop buttons** per span — always preview the exact time range, independent of the current playhead position, and can be stopped from the same button
   - Annotation detail cards with color-coded left borders matching the region color on the waveform
   - Per-annotation info: annotator name, user ID, coarse label, detailed UI choice, timestamp
   - Per-span details: start/end times, intelligibility level, transcribed text

@@ -192,3 +192,10 @@ Chronological log of all changes made to the application.
 - Automatic export still writes `annotations_export.tsv` and `annotations_export.json` after each accepted production annotation
 - Added a regression test to verify `auto_export()` still writes both files without shelling out to subprocesses
 - Updated deployment and technical documentation to describe export-only behavior
+
+### Span playback UX fixes
+- Fixed localizable-span preview in the main annotation screen so clicking a span play button always starts from the span start and plays once, even if the waveform cursor is currently outside that range
+- Changed per-span preview buttons to toggle between play and stop, so annotators can stop a span from the same button instead of using the main audio transport
+- Reused the same deterministic range-preview behavior for tutorial feedback spans, calibration result spans, golden-annotation spans, and admin queue span previews so all segment-preview surfaces behave the same way
+- Kept playback state updates localized to the span controls so in-progress text typed into a span textarea is not lost during preview
+- Verified the change with `pytest` (`79 passed`) and a targeted browser smoke test of span playback/start-stop behavior
