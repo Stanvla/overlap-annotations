@@ -859,9 +859,23 @@ function setAnnotationLocked(locked) {
   updateAnnotationEditability();
 }
 
-function renderReferenceSpans(referenceSpans, buttonContainer) {
+function appendSpanPreviewButtons(buttonContainer, previewSpans, keyPrefix, spanButtons) {
+  if (!buttonContainer || !previewSpans || previewSpans.length === 0) return;
+
+  previewSpans.forEach((sp, i) => {
+    const button = document.createElement('button');
+    button.className = 'play-span-btn';
+    const buttonLabel = `Span ${i + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
+    const key = `${keyPrefix}-${i}`;
+    button.onclick = () => toggleSegmentButtonPlayback(wavesurfer, key, sp.start, sp.end);
+    spanButtons.push({ button, key, label: buttonLabel });
+    buttonContainer.appendChild(button);
+  });
+}
+
+function renderReferenceSpans(referenceSpans, buttonGroups = []) {
   clearReferenceRegions();
-  if (!wavesurfer || !wsRegions || !referenceSpans || referenceSpans.length === 0) return;
+  if (!wavesurfer || !wsRegions) return;
 
   const spanButtons = [];
   const renderButtons = () => {
@@ -870,6 +884,15 @@ function renderReferenceSpans(referenceSpans, buttonContainer) {
     });
   };
   setSegmentButtonRenderer(wavesurfer, renderButtons);
+
+  buttonGroups.forEach(({ buttonContainer, spans, keyPrefix }) => {
+    appendSpanPreviewButtons(buttonContainer, spans, keyPrefix, spanButtons);
+  });
+
+  if (!referenceSpans || referenceSpans.length === 0) {
+    renderButtons();
+    return;
+  }
 
   referenceSpans.forEach((sp, i) => {
     const txt = sp.text || sp.transcribed_text || '';
@@ -884,16 +907,6 @@ function renderReferenceSpans(referenceSpans, buttonContainer) {
       content: label,
     });
     referenceRegionRefs.push(region);
-
-    if (buttonContainer) {
-      const button = document.createElement('button');
-      button.className = 'play-span-btn';
-      const buttonLabel = `Span ${i + 1} (${Number(sp.start).toFixed(1)}s–${Number(sp.end).toFixed(1)}s)`;
-      const key = `reference-${i}`;
-      button.onclick = () => toggleSegmentButtonPlayback(wavesurfer, key, sp.start, sp.end);
-      spanButtons.push({ button, key, label: buttonLabel });
-      buttonContainer.appendChild(button);
-    }
   });
 
   renderButtons();
@@ -1537,6 +1550,8 @@ function showTutorialFeedback(golden, userAnswer) {
   const goldenSpansHtml = renderSpanDetails(golden);
   const userSpansHtml = renderSpanDetails(userAnswer);
 
+  const userSpans = userAnswer.spans || [];
+  const hasUserSpans = userSpans.length > 0;
   const hasGoldenSpans = golden.spans && golden.spans.length > 0;
 
   area.innerHTML = `
@@ -1547,19 +1562,32 @@ function showTutorialFeedback(golden, userAnswer) {
         Correct answer: <strong>${choiceLabel(goldenChoice)}</strong>
       </p>
       <p class="mt-2 text-sm text-muted">This example is now read-only. Review the correct solution, then continue.</p>
-      ${userSpansHtml ? '<div class="mt-2 text-sm" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Your spans:</strong>' + userSpansHtml + '</div>' : ''}
-      ${goldenSpansHtml ? '<div class="mt-2 text-sm" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Correct spans:</strong>' + goldenSpansHtml + '</div>' : ''}
-      ${hasGoldenSpans ? '<div id="tutorial-span-btns" class="mt-2" style="display:flex;gap:4px;flex-wrap:wrap;"></div>' : ''}
+      ${userSpansHtml ? '<div class="mt-2 text-sm" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Your spans:</strong>' + userSpansHtml + (hasUserSpans ? '<div id="tutorial-user-span-btns" class="mt-2" style="display:flex;gap:4px;flex-wrap:wrap;"></div>' : '') + '</div>' : ''}
+      ${goldenSpansHtml ? '<div class="mt-2 text-sm" style="border-top:1px solid #e2e8f0; padding-top:6px;"><strong>Correct spans:</strong>' + goldenSpansHtml + (hasGoldenSpans ? '<div id="tutorial-golden-span-btns" class="mt-2" style="display:flex;gap:4px;flex-wrap:wrap;"></div>' : '') + '</div>' : ''}
     </div>
     <button class="btn btn-primary mt-2" onclick="loadTask()">Next</button>
   `;
 
   clearEditableSpans();
 
-  // Show golden spans as green regions on the existing waveform + play buttons
-  if (wavesurfer && wsRegions && hasGoldenSpans) {
-    const btnContainer = document.getElementById('tutorial-span-btns');
-    renderReferenceSpans(golden.spans, btnContainer);
+  // Show golden spans as green regions on the existing waveform and add preview buttons for both user and golden spans.
+  if (wavesurfer && wsRegions && (hasUserSpans || hasGoldenSpans)) {
+    const buttonGroups = [];
+    if (hasUserSpans) {
+      buttonGroups.push({
+        buttonContainer: document.getElementById('tutorial-user-span-btns'),
+        spans: userSpans,
+        keyPrefix: 'tutorial-user',
+      });
+    }
+    if (hasGoldenSpans) {
+      buttonGroups.push({
+        buttonContainer: document.getElementById('tutorial-golden-span-btns'),
+        spans: golden.spans,
+        keyPrefix: 'tutorial-golden',
+      });
+    }
+    renderReferenceSpans(golden.spans, buttonGroups);
   }
 }
 

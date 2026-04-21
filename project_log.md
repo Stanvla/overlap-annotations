@@ -214,3 +214,8 @@ Chronological log of all changes made to the application.
 - Fully reset editable span state and DOM between tutorial/calibration examples so ghost spans cannot leak into later items
 - Added boundary clamping for whole-span dragging so moving a span to the waveform edge preserves its width instead of clipping it
 - Verified the change with `pytest` (`80 passed`) and a local browser smoke test covering tutorial reveal lock, clean next-example state, and boundary clamp behavior
+
+### Tutorial feedback span-preview parity
+- Fixed tutorial feedback so the user's submitted spans now get their own play/stop buttons in addition to the golden-span preview buttons
+- Kept both preview groups read-only: user spans are reviewable but still are not reinserted into editable waveform state
+- Verified in a local browser smoke test that tutorial feedback can now play both the user span range and the golden span range independently

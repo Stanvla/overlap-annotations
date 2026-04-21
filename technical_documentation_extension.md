@@ -47,11 +47,12 @@ After submitting a tutorial annotation, the correct answer is shown with:
 
 - The shared annotation screen switches into a **read-only review state**: choice buttons are disabled, the editable span editor is hidden, and the original example cannot be submitted again
 - The user's submitted answer is shown as static feedback text rather than remaining live in the editable span state
+- **Play/stop buttons** for the user's own submitted spans, so the annotator can review what they marked without returning those spans to editable waveform state
 - Golden spans rendered as **green regions** (`rgba(34, 197, 94, 0.25)`) on the existing waveform
 - **Play/stop buttons** for each golden span: `▶ Span 1 (1.42s–2.87s)` — clicking from any cursor position plays that exact region once; while active, the button changes to stop and can cancel the preview immediately
 - Text details: span times, intelligibility level, and transcribed text (if any)
 
-Implementation detail: tutorial golden/reference spans are rendered as a separate read-only region layer. They are not merged into the editable `spans` array, which prevents ghost spans from leaking into later examples.
+Implementation detail: tutorial golden/reference spans are rendered as a separate read-only region layer. They are not merged into the editable `spans` array, which prevents ghost spans from leaking into later examples. The user's submitted spans stay out of editable waveform state as well; they are exposed only through read-only feedback text plus dedicated preview buttons.
 
 This allows the annotator to listen to the correct spans and understand the expected annotation.
 
