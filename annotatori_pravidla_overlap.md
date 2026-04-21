@@ -83,6 +83,14 @@ Pro tuto úlohu jsou **pozitivní** tyto dva případy:
 - Okno prohlížeče je při delším přerušení lepší zavřít a později otevřít nové.
 - Zapomenete-li starší okno otevřené, dále v něm neanotujte, ale zavřete jej a otevřete si nové.
 
+## Návrat k předchozím příkladům
+
+V průběhu školení ani během běžné anotace se nelze vracet k předchozím příkladům. Není ale potřeba se toho obávat.
+
+Ve školení je to tak záměrně, protože příkladů je více a předpokládá se, že si pravidla postupně osvojíte.
+
+V běžné anotaci se navíc řada příkladů záměrně ukazuje více annotátorům, takže jednotlivé případy bývají ověřeny opakovaně.
+
 ## Počítadlo postupu
 
 Protože se příklady vybírají z dynamické fronty a některé mohou být průběžně posílány na kontrolu nebo opakovanou anotaci, rozhraní zobrazuje pouze počet již dokončených příkladů.
