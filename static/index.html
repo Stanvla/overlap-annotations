@@ -759,7 +759,6 @@ function getEditableRegionState(region) {
       stableStart: region.start,
       stableEnd: region.end,
       updateOrigin: null,
-      applyingClamp: false,
     };
     editableRegionState.set(region, state);
   }
@@ -922,8 +921,9 @@ function clampDraggedRegion(region) {
   const originalWidth = state.updateOrigin.end - state.updateOrigin.start;
   const currentWidth = region.end - region.start;
   const boundaryTolerance = 0.02;
+  const widthTolerance = 0.001;
 
-  if (duration <= 0 || originalWidth <= 0 || currentWidth >= originalWidth - boundaryTolerance) {
+  if (duration <= 0 || originalWidth <= 0 || currentWidth >= originalWidth - widthTolerance) {
     return false;
   }
 
@@ -941,7 +941,6 @@ function clampDraggedRegion(region) {
     return false;
   }
 
-  state.applyingClamp = true;
   region.setOptions({ start: nextStart, end: nextEnd });
   return true;
 }
@@ -1185,11 +1184,7 @@ function initWaveform(audioUrl) {
     if (!span) return;
 
     const state = getEditableRegionState(region);
-    if (state.applyingClamp) {
-      state.applyingClamp = false;
-    } else if (clampDraggedRegion(region)) {
-      return;
-    }
+    clampDraggedRegion(region);
 
     state.stableStart = region.start;
     state.stableEnd = region.end;
